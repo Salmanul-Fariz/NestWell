@@ -18,6 +18,7 @@ export class AuthController {
       httpOnly: true,
       secure: isProd,
       sameSite: 'lax',
+      path: '/',
       maxAge: 15 * 60 * 1000, // 15 mins
     });
 
@@ -25,14 +26,14 @@ export class AuthController {
       httpOnly: true,
       secure: isProd,
       sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      path: '/api/v1/auth',
     });
   }
 
   private clearAuthCookies(res: Response) {
-    res.clearCookie('access_token');
-    res.clearCookie('refresh_token', { path: '/api/v1/auth' });
+    res.clearCookie('access_token', { path: '/' });
+    res.clearCookie('refresh_token', { path: '/' });
   }
 
   @Public()
