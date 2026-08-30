@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
+import { EMI_STATUSES } from '@nestwell/shared-types';
+import type { EmiStatus } from '@nestwell/shared-types';
 
 export type EmiDocument = Emi & Document;
 
@@ -49,11 +51,11 @@ export class Emi {
 
   @Prop({
     type: String,
-    enum: ['active', 'closed'],
-    default: 'active',
+    enum: EMI_STATUSES,
+    default: 'ACTIVE',
     index: true,
   })
-  status: 'active' | 'closed';
+  status: EmiStatus;
 
   @Prop({ type: [EmiInstallmentSchema], default: [] })
   installments: EmiInstallment[];

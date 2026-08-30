@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
+import { LEND_BORROW_TYPES } from '@nestwell/shared-types';
+import type { LendBorrowType } from '@nestwell/shared-types';
 
 export type LendBorrowDocument = LendBorrow & Document;
 
@@ -9,10 +11,10 @@ export class LendBorrowEntry {
 
   @Prop({
     type: String,
-    enum: ['lend', 'borrow'],
+    enum: LEND_BORROW_TYPES,
     required: true,
   })
-  type: 'lend' | 'borrow';
+  type: LendBorrowType;
 
   @Prop({ type: Number, required: true, min: 0 })
   amount: number;

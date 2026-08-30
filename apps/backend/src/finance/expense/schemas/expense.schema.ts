@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
-import { EXPENSE_CATEGORIES } from '@nestwell/shared-types';
-import type { ExpenseCategory } from '@nestwell/shared-types';
+import { EXPENSE_CATEGORIES, FINANCE_RECURRENCE_FREQS } from '@nestwell/shared-types';
+import type { ExpenseCategory, FinanceRecurrenceFreq } from '@nestwell/shared-types';
 
 export type ExpenseDocument = Expense & Document;
 
@@ -9,10 +9,10 @@ export type ExpenseDocument = Expense & Document;
 export class FinanceRecurrence {
   @Prop({
     type: String,
-    enum: ['weekly', 'monthly', 'yearly'],
+    enum: FINANCE_RECURRENCE_FREQS,
     required: true,
   })
-  frequency: 'weekly' | 'monthly' | 'yearly';
+  frequency: FinanceRecurrenceFreq;
 
   @Prop({ type: Number, default: 1, min: 1 })
   interval: number;

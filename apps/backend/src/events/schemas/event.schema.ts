@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
+import { EVENT_RECURRENCE_FREQS } from '@nestwell/shared-types';
+import type { EventRecurrenceFreq } from '@nestwell/shared-types';
 
 export type EventDocument = Event & Document;
 
@@ -7,10 +9,10 @@ export type EventDocument = Event & Document;
 export class EventRecurrence {
   @Prop({
     type: String,
-    enum: ['none', 'daily', 'weekly', 'monthly', 'yearly'],
-    default: 'none',
+    enum: EVENT_RECURRENCE_FREQS,
+    default: 'NONE',
   })
-  freq: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  freq: EventRecurrenceFreq;
 
   @Prop({ type: Number, default: 1 })
   interval: number;
@@ -54,7 +56,7 @@ export class Event {
   @Prop({ type: Boolean, default: false })
   allDay: boolean;
 
-  @Prop({ type: EventRecurrenceSchema, default: () => ({ freq: 'none', interval: 1, until: null }) })
+  @Prop({ type: EventRecurrenceSchema, default: () => ({ freq: 'NONE', interval: 1, until: null }) })
   recurrence: EventRecurrence;
 
   @Prop({ type: [EventReminderSchema], default: [] })
