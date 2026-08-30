@@ -62,7 +62,11 @@ export class AuthService {
     };
   }
 
-  async refresh(dto: RefreshDto) {
+  async refresh(dto: { refreshToken?: string }) {
+    if (!dto.refreshToken) {
+      throw new UnauthorizedException('Refresh token is required');
+    }
+
     try {
       const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') || 'nestwell_super_secret_jwt_refresh_key_2026';
       const payload = this.jwtService.verify(dto.refreshToken, {
@@ -86,6 +90,10 @@ export class AuthService {
     } catch (e) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+  }
+
+  async logout(userId: string) {
+    await this.usersService.updateRefreshTokenHash(userId, null);
   }
 
   async updateRefreshToken(userId: string, refreshToken: string) {
