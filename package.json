@@ -1,0 +1,15 @@
+{
+  "name": "nestwell",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev": "pnpm --filter \"*\" dev",
+    "build": "pnpm --filter \"*\" build",
+    "test": "pnpm --filter \"*\" test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
