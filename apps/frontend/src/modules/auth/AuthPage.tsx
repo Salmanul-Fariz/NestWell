@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../lib/auth-context';
 import { useTheme, type Theme } from '../../lib/theme-context';
 import { THEME_CONFIG } from '../../lib/theme-constants';
+import { NestwellLogo } from '../../components/shared/NestwellLogo';
 import {
-  ShieldCheck,
   Lock,
   Mail,
   User as UserIcon,
@@ -93,11 +93,11 @@ export const AuthPage: React.FC = () => {
         })}
       </div>
 
-      {/* Ambient Gradient Background Glow */}
+      {/* Ambient Background Glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
-        <div className="absolute -top-32 -left-32 w-[32rem] h-[32rem] bg-indigo-600/15 dark:bg-indigo-600/20 rounded-full blur-[100px] animate-ambient-1" />
-        <div className="absolute top-1/3 -right-32 w-[36rem] h-[36rem] bg-purple-600/10 dark:bg-purple-600/15 rounded-full blur-[120px] animate-ambient-2" />
-        <div className="absolute -bottom-32 left-1/4 w-[28rem] h-[28rem] bg-cyan-600/10 dark:bg-cyan-600/15 rounded-full blur-[100px] animate-ambient-1" />
+        <div className="absolute -top-32 -left-32 w-[32rem] h-[32rem] bg-indigo-600/15 dark:bg-indigo-600/20 rounded-full blur-[100px] animate-pulse-glow" />
+        <div className="absolute top-1/3 -right-32 w-[36rem] h-[36rem] bg-purple-600/10 dark:bg-purple-600/15 rounded-full blur-[120px] animate-pulse-glow" style={{ animationDelay: '-3s' }} />
+        <div className="absolute -bottom-32 left-1/4 w-[28rem] h-[28rem] bg-cyan-600/10 dark:bg-cyan-600/15 rounded-full blur-[100px] animate-pulse-glow" style={{ animationDelay: '-6s' }} />
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
@@ -117,12 +117,12 @@ export const AuthPage: React.FC = () => {
           </div>
 
           <div>
-            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight text-slate-900 dark:text-white">
-              One place for <br />
-              <span className="text-gradient-brand">your digital privacy.</span>
+            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight text-slate-900 dark:text-white flex flex-col">
+              <span>One place for</span>
+              <span className="text-indigo-600 dark:text-indigo-400">your digital privacy.</span>
             </h1>
             <p className="text-base sm:text-lg mt-3 max-w-md font-normal leading-relaxed text-slate-600 dark:text-slate-400">
-              Encrypted credentials, multi-schedule calendar reminders, and personal cashflow ledger.
+              Encrypted credentials, multi-schedule calendar reminders, and personal cashflow ledger under your complete control.
             </p>
           </div>
 
@@ -156,12 +156,10 @@ export const AuthPage: React.FC = () => {
           <div className={`rounded-3xl p-7 sm:p-9 relative overflow-hidden shadow-2xl ${THEME_CONFIG.surfaces.card}`}>
             <div className="flex items-center justify-between mb-7">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 ring-1 ring-white/20">
-                  <ShieldCheck className="w-6 h-6 text-white" />
-                </div>
+                <NestwellLogo size={44} />
                 <div>
                   <h2 className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">Nestwell</h2>
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Secure Access</p>
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Secure Access Portal</p>
                 </div>
               </div>
 
