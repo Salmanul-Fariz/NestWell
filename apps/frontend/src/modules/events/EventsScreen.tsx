@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { FormInput, FormSelect, FormTextarea } from '../../components/ui/FormControls';
+import { FormInput, FormSelect, FormTextarea, DatePicker } from '../../components/ui/FormControls';
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -426,19 +426,16 @@ export const EventsScreen: React.FC = () => {
                 />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormInput
+                  <DatePicker
                     label="Event Date *"
-                    type="date"
-                    required
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(val) => setStartDate(val)}
                   />
 
-                  <FormInput
+                  <DatePicker
                     label="End Date (Optional)"
-                    type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(val) => setEndDate(val)}
                   />
                 </div>
 
@@ -453,14 +450,15 @@ export const EventsScreen: React.FC = () => {
                   <FormSelect
                     label="Recurrence Frequency"
                     value={freq}
-                    onChange={(e: any) => setFreq(e.target.value)}
-                  >
-                    <option value="NONE">Does not repeat</option>
-                    <option value="DAILY">Daily</option>
-                    <option value="WEEKLY">Weekly</option>
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="YEARLY">Yearly</option>
-                  </FormSelect>
+                    onChange={(val: any) => setFreq(val)}
+                    options={[
+                      { value: 'NONE', label: 'Does not repeat' },
+                      { value: 'DAILY', label: 'Daily' },
+                      { value: 'WEEKLY', label: 'Weekly' },
+                      { value: 'MONTHLY', label: 'Monthly' },
+                      { value: 'YEARLY', label: 'Yearly' },
+                    ]}
+                  />
                 </div>
 
                 <div>

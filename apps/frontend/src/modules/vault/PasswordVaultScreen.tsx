@@ -2,14 +2,12 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
 import { encryptPassword, decryptPassword, generateStrongPassword } from '../../lib/crypto';
-import { useVaultLock } from '../../lib/vault-lock-context';
+import { useAuth } from '../../lib/auth-context';
 import { FormInput, FormSelect, FormTextarea } from '../../components/ui/FormControls';
 import {
   KeyRound,
   Plus,
   Search,
-  Lock,
-  Unlock,
   Eye,
   EyeOff,
   Copy,
@@ -20,7 +18,6 @@ import {
   Sparkles,
   Globe,
   User,
-  ShieldCheck,
 } from 'lucide-react';
 
 export const VAULT_PRESET_CATEGORIES = [
@@ -46,10 +43,7 @@ interface PasswordEntry {
 }
 
 export const PasswordVaultScreen: React.FC = () => {
-  const { cryptoKey, isUnlocked, unlockVault } = useVaultLock();
-  const [masterPasswordInput, setMasterPasswordInput] = useState('');
-  const [unlockError, setUnlockError] = useState<string | null>(null);
-  const [unlocking, setUnlocking] = useState(false);
+  const { cryptoKey } = useAuth();
 
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -89,19 +83,6 @@ export const PasswordVaultScreen: React.FC = () => {
     fetchEntries();
   }, []);
 
-  const handleUnlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!masterPasswordInput.trim()) return;
-    setUnlockError(null);
-    setUnlocking(true);
-
-    const success = await unlockVault(masterPasswordInput.trim());
-    setUnlocking(false);
-    if (!success) {
-      setUnlockError('Could not derive encryption key. Please check your master password.');
-    }
-  };
-
   const toggleRevealPassword = async (entry: PasswordEntry) => {
     if (!cryptoKey) return;
 
@@ -117,7 +98,7 @@ export const PasswordVaultScreen: React.FC = () => {
       }
       setRevealedIds((prev) => ({ ...prev, [entry._id]: true }));
     } catch {
-      alert('Decryption failed. Ensure the Master Password matches the one used to save this item.');
+      alert('Decryption failed. Password could not be decrypted.');
     }
   };
 
@@ -180,7 +161,7 @@ export const PasswordVaultScreen: React.FC = () => {
   const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cryptoKey) {
-      setModalError('Master Vault is locked. Please unlock the app first.');
+      setModalError('Encryption key is not available. Please re-login.');
       return;
     }
     if (!modalTitle.trim() || !modalPassword.trim()) {
@@ -259,66 +240,15 @@ export const PasswordVaultScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5">
-          {isUnlocked ? (
-            <button
-              onClick={() => openModal()}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Password</span>
-            </button>
-          ) : (
-            <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 font-medium px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <Lock className="w-3.5 h-3.5" /> App Vault Locked
-            </span>
-          )}
+          <button
+            onClick={() => openModal()}
+            className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Password</span>
+          </button>
         </div>
       </div>
-
-      {/* Global Master Vault Unlock Bar if locked */}
-      {!isUnlocked && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-6 rounded-3xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 backdrop-blur-md shadow-sm"
-        >
-          <div className="max-w-xl mx-auto text-center space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white mx-auto flex items-center justify-center shadow-lg shadow-indigo-600/30">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                Unlock Master Vault
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                Enter your Master Password once to derive your local AES-GCM encryption key for this session.
-              </p>
-            </div>
-
-            <form onSubmit={handleUnlock} className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
-              <div className="flex-1">
-                <FormInput
-                  type="password"
-                  required
-                  value={masterPasswordInput}
-                  onChange={(e) => setMasterPasswordInput(e.target.value)}
-                  placeholder="Enter Master Password..."
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={unlocking}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all shrink-0 self-end sm:self-auto h-[42px]"
-              >
-                {unlocking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
-                <span>{unlocking ? 'Deriving Key...' : 'Unlock App'}</span>
-              </button>
-            </form>
-
-            {unlockError && <p className="text-xs text-rose-500 font-medium">{unlockError}</p>}
-          </div>
-        </motion.div>
-      )}
 
       {/* Search & Folder/Category Pills */}
       <div className="space-y-3">
@@ -338,7 +268,7 @@ export const PasswordVaultScreen: React.FC = () => {
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
                   selectedCategory === cat
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -424,8 +354,7 @@ export const PasswordVaultScreen: React.FC = () => {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => toggleRevealPassword(item)}
-                        disabled={!isUnlocked}
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30 transition-colors"
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                         title={isRevealed ? 'Hide Password' : 'Show Password'}
                       >
                         {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -433,10 +362,9 @@ export const PasswordVaultScreen: React.FC = () => {
 
                       <button
                         onClick={() => handleCopyPassword(item)}
-                        disabled={!isUnlocked}
-                        className={`p-1 transition-colors ${
+                        className={`p-1 transition-colors cursor-pointer ${
                           isCopied ? 'text-emerald-500 font-bold' : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
-                        } disabled:opacity-30`}
+                        }`}
                         title="Copy Password"
                       >
                         {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -456,8 +384,7 @@ export const PasswordVaultScreen: React.FC = () => {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => openModal(item)}
-                      disabled={!isUnlocked}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 transition-colors disabled:opacity-30 cursor-pointer"
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
                       title="Edit Credential"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -524,15 +451,12 @@ export const PasswordVaultScreen: React.FC = () => {
                     <FormSelect
                       label="Folder / Category"
                       value={modalCategory}
-                      onChange={(e) => setModalCategory(e.target.value)}
-                    >
-                      {VAULT_PRESET_CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                      <option value="Custom">+ Custom Folder...</option>
-                    </FormSelect>
+                      onChange={(val) => setModalCategory(val)}
+                      options={[
+                        ...VAULT_PRESET_CATEGORIES.map((c) => ({ value: c, label: c })),
+                        { value: 'Custom', label: '+ Custom Folder...' },
+                      ]}
+                    />
 
                     {modalCategory === 'Custom' && (
                       <div className="mt-2">
@@ -597,7 +521,7 @@ export const PasswordVaultScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>

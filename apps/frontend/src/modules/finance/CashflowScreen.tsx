@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../../lib/api';
-import { FormInput, FormSelect } from '../../components/ui/FormControls';
+import { FormInput, FormSelect, DatePicker } from '../../components/ui/FormControls';
 import {
   EXPENSE_CATEGORIES,
   INCOME_SOURCES,
@@ -388,34 +388,28 @@ export const CashflowScreen: React.FC = () => {
                     <FormSelect
                       label="Expense Category *"
                       value={category}
-                      onChange={(e: any) => setCategory(e.target.value)}
-                    >
-                      {EXPENSE_CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                    </FormSelect>
+                      onChange={(val: any) => setCategory(val)}
+                      options={EXPENSE_CATEGORIES.map((cat) => ({
+                        value: cat,
+                        label: cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase(),
+                      }))}
+                    />
                   ) : (
                     <FormSelect
                       label="Income Source *"
                       value={source}
-                      onChange={(e: any) => setSource(e.target.value)}
-                    >
-                      {INCOME_SOURCES.map((src) => (
-                        <option key={src} value={src}>
-                          {src}
-                        </option>
-                      ))}
-                    </FormSelect>
+                      onChange={(val: any) => setSource(val)}
+                      options={INCOME_SOURCES.map((src) => ({
+                        value: src,
+                        label: src.charAt(0).toUpperCase() + src.slice(1).toLowerCase(),
+                      }))}
+                    />
                   )}
 
-                  <FormInput
+                  <DatePicker
                     label="Date *"
-                    type="date"
-                    required
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(val) => setDate(val)}
                   />
                 </div>
 
@@ -444,12 +438,13 @@ export const CashflowScreen: React.FC = () => {
                       <FormSelect
                         label="Recurring Frequency"
                         value={freq}
-                        onChange={(e: any) => setFreq(e.target.value)}
-                      >
-                        <option value="WEEKLY">Weekly</option>
-                        <option value="MONTHLY">Monthly</option>
-                        <option value="YEARLY">Yearly</option>
-                      </FormSelect>
+                        onChange={(val: any) => setFreq(val)}
+                        options={[
+                          { value: 'WEEKLY', label: 'Weekly' },
+                          { value: 'MONTHLY', label: 'Monthly' },
+                          { value: 'YEARLY', label: 'Yearly' },
+                        ]}
+                      />
                     </div>
                   )}
                 </div>

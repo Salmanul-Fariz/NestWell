@@ -2,6 +2,13 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { api } from '../../lib/api';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
+import {
   ResponsiveContainer,
   AreaChart,
   Area,
@@ -24,7 +31,6 @@ import {
   CreditCard,
   Users,
   Loader2,
-  Calendar,
 } from 'lucide-react';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -202,40 +208,47 @@ export const ReportsScreen: React.FC = () => {
           </div>
 
           {/* Date Picker Selectors */}
-          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-2xl shadow-sm">
-            <Calendar className="w-4 h-4 text-slate-400 ml-2" />
-
+          <div className="flex items-center gap-2">
             {viewMode === 'monthly' && (
-              <>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
-                  className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2 py-1 focus:outline-none cursor-pointer"
+              <div className="w-36">
+                <Select
+                  value={selectedMonth.toString()}
+                  onValueChange={(val) => setSelectedMonth(parseInt(val, 10))}
                 >
-                  {[
-                    'January', 'February', 'March', 'April', 'May', 'June',
-                    'July', 'August', 'September', 'October', 'November', 'December'
-                  ].map((m, idx) => (
-                    <option key={m} value={idx + 1} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <div className="w-px h-4 bg-slate-200 dark:bg-slate-800" />
-              </>
+                  <SelectTrigger className="h-9 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      'January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'
+                    ].map((m, idx) => (
+                      <SelectItem key={m} value={(idx + 1).toString()}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2 py-1 focus:outline-none cursor-pointer"
-            >
-              {[2024, 2025, 2026, 2027].map((y) => (
-                <option key={y} value={y} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                  {y}
-                </option>
-              ))}
-            </select>
+            <div className="w-28">
+              <Select
+                value={selectedYear.toString()}
+                onValueChange={(val) => setSelectedYear(parseInt(val, 10))}
+              >
+                <SelectTrigger className="h-9 text-xs rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[2024, 2025, 2026, 2027].map((y) => (
+                    <SelectItem key={y} value={y.toString()}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>

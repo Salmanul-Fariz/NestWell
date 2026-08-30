@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { FormInput } from '../../components/ui/FormControls';
+import { FormInput, DatePicker } from '../../components/ui/FormControls';
 import {
   Users,
   Plus,
@@ -507,12 +507,10 @@ export const LendBorrowScreen: React.FC = () => {
                   placeholder="e.g. Dinner split, Emergency cash"
                 />
 
-                <FormInput
+                <DatePicker
                   label="Date"
-                  type="date"
-                  required
                   value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
+                  onChange={(val) => setEntryDate(val)}
                 />
 
                 <div className="flex items-center justify-end gap-2.5 pt-4">

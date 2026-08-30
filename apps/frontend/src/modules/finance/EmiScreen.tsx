@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { FormInput } from '../../components/ui/FormControls';
+import { FormInput, DatePicker } from '../../components/ui/FormControls';
 import {
   CreditCard,
   Plus,
@@ -344,12 +344,10 @@ export const EmiScreen: React.FC = () => {
                     onChange={(e) => setTenureMonths(e.target.value)}
                   />
 
-                  <FormInput
+                  <DatePicker
                     label="First Due Date *"
-                    type="date"
-                    required
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(val) => setStartDate(val)}
                   />
                 </div>
 
