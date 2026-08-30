@@ -5,11 +5,12 @@
   "scripts": {
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
-    "dev": "pnpm --filter \"*\" dev",
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
     "build": "pnpm --filter \"*\" build",
     "test": "pnpm --filter \"*\" test"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "typescript": "^5.7.3"
   }
 }
