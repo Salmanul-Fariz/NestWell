@@ -24,7 +24,7 @@ COPY apps/backend ./apps/backend
 
 RUN pnpm --filter @nestwell/shared-types build || true \
     && pnpm --filter backend build \
-    && pnpm --filter backend deploy --prod --legacy /out
+    && pnpm --filter backend deploy --prod /out
 
 FROM node:22-alpine AS runner
 
