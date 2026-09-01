@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { IncomeService } from './income.service';
 import { CreateIncomeDto } from './dto/create-income.dto';
 import { UpdateIncomeDto } from './dto/update-income.dto';
@@ -9,8 +9,12 @@ export class IncomeController {
   constructor(private readonly incomeService: IncomeService) {}
 
   @Get()
-  findAll(@CurrentUser('userId') userId: string) {
-    return this.incomeService.findAll(userId);
+  findAll(
+    @CurrentUser('userId') userId: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+  ) {
+    return this.incomeService.findAll(userId, { month, year });
   }
 
   @Post()

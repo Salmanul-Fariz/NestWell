@@ -6,6 +6,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ACCESS_TOKEN_MAX_AGE_MS, REFRESH_TOKEN_MAX_AGE_MS } from './auth.constants';
 
 @Controller('auth')
 export class AuthController {
@@ -19,7 +20,7 @@ export class AuthController {
       secure: isProd,
       sameSite: 'lax',
       path: '/',
-      maxAge: 15 * 60 * 1000, // 15 mins
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
 
     res.cookie('refresh_token', refreshToken, {
@@ -27,7 +28,7 @@ export class AuthController {
       secure: isProd,
       sameSite: 'lax',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
     });
   }
 
@@ -68,9 +69,14 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const refreshToken = req.cookies?.['refresh_token'] || dto?.refreshToken;
-    const tokens = await this.authService.refresh({ refreshToken });
-    this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
-    return tokens;
+    try {
+      const tokens = await this.authService.refresh({ refreshToken });
+      this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+      return tokens;
+    } catch (err) {
+      this.clearAuthCookies(res);
+      throw err;
+    }
   }
 
   @Post('logout')

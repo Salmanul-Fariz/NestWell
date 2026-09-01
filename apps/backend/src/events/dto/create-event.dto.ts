@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -10,8 +10,14 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { EVENT_RECURRENCE_FREQS } from '@nestwell/shared-types';
-import type { EventRecurrenceFreq } from '@nestwell/shared-types';
+import { EVENT_CATEGORIES, EVENT_RECURRENCE_FREQS } from '@nestwell/shared-types';
+import type { EventCategory, EventRecurrenceFreq } from '@nestwell/shared-types';
+
+/** Treat empty / null as omitted so optional ISO fields do not fail validation. */
+function emptyToUndefined({ value }: { value: unknown }) {
+  if (value === '' || value === null || value === undefined) return undefined;
+  return value;
+}
 
 export class RecurrenceDto {
   @IsEnum(EVENT_RECURRENCE_FREQS)
@@ -37,6 +43,10 @@ export class CreateEventDto {
   title: string;
 
   @IsOptional()
+  @IsEnum(EVENT_CATEGORIES)
+  category?: EventCategory;
+
+  @IsOptional()
   @IsString()
   description?: string;
 
@@ -47,8 +57,10 @@ export class CreateEventDto {
   @IsDateString()
   startAt: string;
 
+  @Transform(emptyToUndefined)
+  @IsOptional()
   @IsDateString()
-  endAt: string;
+  endAt?: string;
 
   @IsOptional()
   @IsBoolean()

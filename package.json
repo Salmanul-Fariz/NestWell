@@ -6,7 +6,8 @@
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
     "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
-    "build": "pnpm --filter \"*\" build",
+    "build": "pnpm --filter frontend build && pnpm --filter backend build",
+    "start:prod": "pnpm --filter backend start:prod",
     "test": "pnpm --filter \"*\" test"
   },
   "devDependencies": {

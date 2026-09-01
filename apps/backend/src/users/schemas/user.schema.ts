@@ -19,6 +19,13 @@ export class User {
   @Prop({ type: String, default: null })
   refreshTokenHash?: string | null;
 
+  /** Kept briefly so an in-flight request using the pre-rotation token is not rejected. */
+  @Prop({ type: String, default: null })
+  previousRefreshTokenHash?: string | null;
+
+  @Prop({ type: Date, default: null })
+  refreshTokenRotatedAt?: Date | null;
+
   createdAt: Date;
 }
 

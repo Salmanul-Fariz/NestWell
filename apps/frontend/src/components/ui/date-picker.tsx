@@ -4,6 +4,11 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-reac
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { cn } from '../../lib/utils';
 
+const MONTH_LABELS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 export interface DatePickerProps {
   label?: string;
   error?: string;
@@ -30,14 +35,21 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     selectedDate || new Date(),
   );
 
+  // Jump the calendar to the selected date, including when the popover is reopened.
   React.useEffect(() => {
-    if (selectedDate) {
-      setViewDate(selectedDate);
+    if (value) {
+      setViewDate(new Date(value + 'T00:00:00'));
     }
-  }, [value]);
+  }, [value, open]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
+
+  const yearChoices = React.useMemo(() => {
+    const base = selectedDate ? selectedDate.getFullYear() : new Date().getFullYear();
+    const anchor = Math.min(base, year);
+    return Array.from({ length: 9 }, (_, i) => anchor - 3 + i);
+  }, [year, value]);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const startDay = new Date(year, month, 1).getDay();
@@ -104,10 +116,32 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           align="start"
         >
           {/* Calendar Header */}
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-              {format(viewDate, 'MMMM yyyy')}
-            </h4>
+          <div className="flex items-center justify-between mb-3 gap-1">
+            <div className="flex items-center gap-1">
+              <select
+                value={month}
+                onChange={(e) => setViewDate(new Date(year, Number(e.target.value), 1))}
+                className="text-xs font-bold bg-transparent text-slate-900 dark:text-white rounded-lg px-1 py-1 cursor-pointer focus:outline-none hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                {MONTH_LABELS.map((name, idx) => (
+                  <option key={name} value={idx} className="text-slate-900">
+                    {name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={year}
+                onChange={(e) => setViewDate(new Date(Number(e.target.value), month, 1))}
+                className="text-xs font-bold bg-transparent text-slate-900 dark:text-white rounded-lg px-1 py-1 cursor-pointer focus:outline-none hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                {yearChoices.map((y) => (
+                  <option key={y} value={y} className="text-slate-900">
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"

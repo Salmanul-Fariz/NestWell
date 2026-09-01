@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Expense, ExpenseDocument } from './schemas/expense.schema';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
+import { buildDateFilter } from '../../common/utils/date-range';
 
 @Injectable()
 export class ExpenseService {
@@ -12,11 +13,15 @@ export class ExpenseService {
     private readonly expenseModel: Model<ExpenseDocument>,
   ) {}
 
-  async findAll(userId: string): Promise<ExpenseDocument[]> {
-    return this.expenseModel
-      .find({ userId: new Types.ObjectId(userId) })
-      .sort({ date: -1 })
-      .exec();
+  async findAll(
+    userId: string,
+    filter: { month?: string; year?: string } = {},
+  ): Promise<ExpenseDocument[]> {
+    const query: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+    const dateFilter = buildDateFilter(filter.month, filter.year);
+    if (dateFilter) query.date = dateFilter;
+
+    return this.expenseModel.find(query).sort({ date: -1 }).exec();
   }
 
   async findOne(userId: string, id: string): Promise<ExpenseDocument> {
@@ -49,7 +54,9 @@ export class ExpenseService {
   async update(userId: string, id: string, dto: UpdateExpenseDto): Promise<ExpenseDocument> {
     const updateData: any = { ...dto };
     if (dto.date) updateData.date = new Date(dto.date);
-    if (dto.recurrence) {
+    if (dto.recurring === false) {
+      updateData.recurrence = null;
+    } else if (dto.recurrence) {
       updateData.recurrence = {
         ...dto.recurrence,
         interval: dto.recurrence.interval ?? 1,

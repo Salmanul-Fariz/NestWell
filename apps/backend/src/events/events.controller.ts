@@ -41,4 +41,11 @@ export class EventsController {
   ) {
     return this.eventsService.remove(userId, id);
   }
+
+  @Post('test-reminders')
+  async testReminders(
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.eventsService.triggerTestReminders(userId);
+  }
 }

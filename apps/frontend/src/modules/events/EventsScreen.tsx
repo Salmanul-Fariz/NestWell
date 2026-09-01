@@ -1,7 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
 import { FormInput, FormSelect, FormTextarea, DatePicker } from '../../components/ui/FormControls';
+import { apiErrorMessage, formatDateOnly, todayDateOnly, toDateOnly, toIsoUtcDate } from '../../lib/utils';
+import {
+  EVENT_CATEGORIES,
+  formatConstantLabel,
+  type EventCategory,
+  type EventRecurrenceFreq,
+} from '@nestwell/shared-types';
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -13,6 +20,7 @@ import {
   ChevronRight,
   Loader2,
   Repeat,
+  RepeatOff,
 } from 'lucide-react';
 
 interface EventReminder {
@@ -22,18 +30,75 @@ interface EventReminder {
 interface EventItem {
   _id: string;
   title: string;
+  category?: EventCategory;
   description?: string;
   location?: string;
   startAt: string;
-  endAt?: string;
+  endAt?: string | null;
   allDay: boolean;
   recurrence?: {
-    freq: 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+    freq: EventRecurrenceFreq;
     interval: number;
     until?: string;
   };
   reminders: EventReminder[];
   createdAt: string;
+}
+
+/** Check if an event occurs on the given date string YYYY-MM-DD */
+function isEventOnDate(event: EventItem, dateStr: string): boolean {
+  const [targetYear, targetMonth, targetDay] = dateStr.split('-').map(Number);
+  const startStr = toDateOnly(event.startAt);
+  if (!startStr) return false;
+
+  const [startYear, startMonth, startDay] = startStr.split('-').map(Number);
+  const freq = event.recurrence?.freq || 'NONE';
+  const interval = event.recurrence?.interval || 1;
+
+  if (event.recurrence?.until) {
+    const untilStr = toDateOnly(event.recurrence.until);
+    if (untilStr && dateStr > untilStr) return false;
+  }
+
+  if (freq === 'NONE') {
+    const endStr = toDateOnly(event.endAt) || startStr;
+    return dateStr >= startStr && dateStr <= endStr;
+  }
+
+  // Recurring events don't trigger before their original start date
+  if (dateStr < startStr) return false;
+
+  if (freq === 'YEARLY') {
+    if (startMonth === targetMonth && startDay === targetDay) {
+      const yearDiff = targetYear - startYear;
+      return yearDiff >= 0 && yearDiff % interval === 0;
+    }
+    return false;
+  }
+
+  if (freq === 'MONTHLY') {
+    if (startDay === targetDay) {
+      const monthDiff = (targetYear - startYear) * 12 + (targetMonth - startMonth);
+      return monthDiff >= 0 && monthDiff % interval === 0;
+    }
+    return false;
+  }
+
+  if (freq === 'WEEKLY') {
+    const startDateObj = new Date(startYear, startMonth - 1, startDay);
+    const targetDateObj = new Date(targetYear, targetMonth - 1, targetDay);
+    const diffDays = Math.round((targetDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays % (7 * interval) === 0;
+  }
+
+  if (freq === 'DAILY') {
+    const startDateObj = new Date(startYear, startMonth - 1, startDay);
+    const targetDateObj = new Date(targetYear, targetMonth - 1, targetDay);
+    const diffDays = Math.round((targetDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays % interval === 0;
+  }
+
+  return false;
 }
 
 export const EventsScreen: React.FC = () => {
@@ -45,14 +110,16 @@ export const EventsScreen: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
   const [title, setTitle] = useState('');
+  const [category, setCategory] = useState<EventCategory>('REMINDER');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(todayDateOnly());
   const [endDate, setEndDate] = useState('');
-  const [freq, setFreq] = useState<'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('NONE');
+  const [freq, setFreq] = useState<EventRecurrenceFreq>('NONE');
   const [selectedOffsets, setSelectedOffsets] = useState<number[]>([1440]); // Default 1 day before
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -75,18 +142,20 @@ export const EventsScreen: React.FC = () => {
     if (event) {
       setEditingEvent(event);
       setTitle(event.title);
+      setCategory(event.category || 'REMINDER');
       setDescription(event.description || '');
       setLocation(event.location || '');
-      setStartDate(event.startAt ? new Date(event.startAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
-      setEndDate(event.endAt ? new Date(event.endAt).toISOString().slice(0, 10) : '');
+      setStartDate(toDateOnly(event.startAt) || todayDateOnly());
+      setEndDate(toDateOnly(event.endAt));
       setFreq(event.recurrence?.freq || 'NONE');
       setSelectedOffsets(event.reminders?.map((r) => r.offsetMinutes) || [1440]);
     } else {
       setEditingEvent(null);
       setTitle('');
+      setCategory('REMINDER');
       setDescription('');
       setLocation('');
-      setStartDate(new Date().toISOString().slice(0, 10));
+      setStartDate(todayDateOnly());
       setEndDate('');
       setFreq('NONE');
       setSelectedOffsets([1440]);
@@ -101,17 +170,23 @@ export const EventsScreen: React.FC = () => {
       return;
     }
 
+    if (endDate && endDate < startDate) {
+      setError('End date cannot be before the start date.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
     const payload = {
       title: title.trim(),
+      category,
       description: description.trim() || undefined,
-      location: location.trim() || undefined,
-      startAt: new Date(startDate).toISOString(),
-      endAt: endDate ? new Date(endDate).toISOString() : undefined,
+      location: location.trim(),
+      startAt: toIsoUtcDate(startDate),
+      endAt: endDate ? toIsoUtcDate(endDate) : null,
       allDay: true,
-      recurrence: freq !== 'NONE' ? { freq, interval: 1 } : undefined,
+      recurrence: { freq, interval: 1 },
       reminders: selectedOffsets.map((offsetMinutes) => ({ offsetMinutes })),
     };
 
@@ -125,7 +200,7 @@ export const EventsScreen: React.FC = () => {
       }
       setIsModalOpen(false);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save event');
+      setError(apiErrorMessage(err, 'Failed to save event'));
     } finally {
       setSaving(false);
     }
@@ -138,6 +213,19 @@ export const EventsScreen: React.FC = () => {
       setEvents((prev) => prev.filter((e) => e._id !== id));
     } catch {
       alert('Failed to delete event');
+    }
+  };
+
+  const handleToggleRecurring = async (id: string, currentFreq: string) => {
+    const isRecurring = currentFreq && currentFreq !== 'NONE';
+    const nextFreq: EventRecurrenceFreq = isRecurring ? 'NONE' : 'YEARLY';
+    try {
+      const res = await api.patch(`/events/${id}`, {
+        recurrence: { freq: nextFreq, interval: 1 },
+      });
+      setEvents((prev) => prev.map((ev) => (ev._id === id ? res.data : ev)));
+    } catch {
+      alert('Failed to update event recurrence');
     }
   };
 
@@ -154,6 +242,20 @@ export const EventsScreen: React.FC = () => {
     if (mins < 1440) return `${Math.round(mins / 60)} hrs before`;
     return `${Math.round(mins / 1440)} day(s) before`;
   };
+
+  const yearsRange = useMemo(() => {
+    const currYear = new Date().getFullYear();
+    const list = [];
+    for (let y = currYear - 5; y <= currYear + 10; y++) {
+      list.push(y);
+    }
+    return list;
+  }, []);
+
+  const monthsList = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
 
   return (
     <div className="space-y-6">
@@ -193,6 +295,23 @@ export const EventsScreen: React.FC = () => {
           </div>
 
           <button
+            onClick={async () => {
+              try {
+                const res = await api.post<{ success: boolean; message: string }>('/events/test-reminders');
+                setFeedback(res.data.message || 'Reminder alerts evaluated and dispatched.');
+                setTimeout(() => setFeedback(null), 5000);
+              } catch (err: any) {
+                setError(apiErrorMessage(err, 'Failed to trigger test reminders'));
+              }
+            }}
+            className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+            title="Test reminder notifications immediately"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Test Alerts</span>
+          </button>
+
+          <button
             onClick={() => openModal()}
             className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all cursor-pointer"
           >
@@ -201,6 +320,37 @@ export const EventsScreen: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {feedback && (
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed bottom-6 right-6 z-50 max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xl shadow-indigo-500/10 flex items-start gap-3.5 backdrop-blur-xl"
+          >
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+              <Bell className="w-4 h-4" />
+            </div>
+            <div className="flex-1 pr-2">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-xs font-bold text-slate-900 dark:text-white">Alert Dispatch Success</span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                  Triggered
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{feedback}</p>
+            </div>
+            <button
+              onClick={() => setFeedback(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {loading ? (
         <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
@@ -218,8 +368,8 @@ export const EventsScreen: React.FC = () => {
       ) : viewMode === 'list' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {events.map((item) => {
-            const start = new Date(item.startAt);
             const isRecurring = item.recurrence && item.recurrence.freq !== 'NONE';
+            const hasRange = Boolean(item.endAt) && toDateOnly(item.startAt) !== toDateOnly(item.endAt);
 
             return (
               <motion.div
@@ -234,11 +384,19 @@ export const EventsScreen: React.FC = () => {
                         <CalendarIcon className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                          {item.title}
-                        </h4>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                            {item.title}
+                          </h4>
+                          {item.category && (
+                            <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {formatConstantLabel(item.category)}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[11px] text-slate-400 font-mono">
-                          {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                          {formatDateOnly(item.startAt)}
+                          {hasRange && <> – {formatDateOnly(item.endAt)}</>}
                         </span>
                       </div>
                     </div>
@@ -280,6 +438,15 @@ export const EventsScreen: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                  {isRecurring && (
+                    <button
+                      onClick={() => handleToggleRecurring(item._id, item.recurrence?.freq || 'NONE')}
+                      className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-500 hover:text-amber-600 transition-colors cursor-pointer"
+                      title="Turn off event recurrence"
+                    >
+                      <RepeatOff className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => openModal(item)}
                     className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
@@ -301,14 +468,47 @@ export const EventsScreen: React.FC = () => {
         </div>
       ) : (
         <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-bold text-base text-slate-900 dark:text-white">
-              {currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-            </h3>
+          {/* Calendar Header with Month & Year dropdowns + prev/next */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-2">
+              {/* Month Selector */}
+              <select
+                aria-label="Select month"
+                value={currentDate.getMonth()}
+                onChange={(e) =>
+                  setCurrentDate(new Date(currentDate.getFullYear(), Number(e.target.value), 1))
+                }
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {monthsList.map((m, idx) => (
+                  <option key={m} value={idx}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+
+              {/* Year Selector */}
+              <select
+                aria-label="Select year"
+                value={currentDate.getFullYear()}
+                onChange={(e) =>
+                  setCurrentDate(new Date(Number(e.target.value), currentDate.getMonth(), 1))
+                }
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {yearsRange.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
                 className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                title="Previous Month"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -321,6 +521,7 @@ export const EventsScreen: React.FC = () => {
               <button
                 onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
                 className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                title="Next Month"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -334,27 +535,26 @@ export const EventsScreen: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-7 gap-2">
-            {Array.from({ length: 35 }).map((_, idx) => {
+            {(() => {
               const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-              const dayNumber = idx - firstDay + 1;
               const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+              const cellCount = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+              return Array.from({ length: cellCount }).map((_, idx) => {
+              const dayNumber = idx - firstDay + 1;
               const isValidDay = dayNumber > 0 && dayNumber <= daysInMonth;
 
+              const cellDateStr = isValidDay
+                ? `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`
+                : '';
+
               const dayEvents = isValidDay
-                ? events.filter((e) => {
-                    const d = new Date(e.startAt);
-                    return (
-                      d.getDate() === dayNumber &&
-                      d.getMonth() === currentDate.getMonth() &&
-                      d.getFullYear() === currentDate.getFullYear()
-                    );
-                  })
+                ? events.filter((e) => isEventOnDate(e, cellDateStr))
                 : [];
 
               return (
                 <div
                   key={idx}
-                  className={`min-h-[90px] p-2 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  className={`min-h-[95px] p-2 rounded-xl border text-left flex flex-col justify-between transition-all ${
                     isValidDay
                       ? 'bg-slate-50 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80'
                       : 'opacity-20 border-transparent'
@@ -362,15 +562,26 @@ export const EventsScreen: React.FC = () => {
                 >
                   {isValidDay && (
                     <>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{dayNumber}</span>
-                      <div className="space-y-1 overflow-y-auto max-h-[60px] no-scrollbar">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{dayNumber}</span>
+                        {dayEvents.length > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-500/10 text-indigo-600 font-bold">
+                            {dayEvents.length}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1 overflow-y-auto max-h-[65px] no-scrollbar">
                         {dayEvents.map((ev) => (
                           <div
                             key={ev._id}
                             onClick={() => openModal(ev)}
-                            className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-indigo-600 dark:text-indigo-400 truncate cursor-pointer hover:bg-indigo-500/25"
+                            className="text-[10px] font-medium p-1 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 truncate cursor-pointer hover:bg-indigo-500/20 transition-colors flex items-center gap-1"
+                            title={`${ev.title} (${ev.category || 'Event'})`}
                           >
-                            {ev.title}
+                            {ev.recurrence && ev.recurrence.freq !== 'NONE' && (
+                              <Repeat className="w-2.5 h-2.5 shrink-0 text-purple-600 dark:text-purple-400" />
+                            )}
+                            <span className="truncate">{ev.title}</span>
                           </div>
                         ))}
                       </div>
@@ -378,7 +589,8 @@ export const EventsScreen: React.FC = () => {
                   )}
                 </div>
               );
-            })}
+            });
+            })()}
           </div>
         </div>
       )}
@@ -417,13 +629,25 @@ export const EventsScreen: React.FC = () => {
               )}
 
               <form onSubmit={handleSave} className="space-y-4">
-                <FormInput
-                  label="Event Title *"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Mom's Birthday, Domain Renewal, Tax Filing"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormInput
+                    label="Event Title *"
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Mom's Birthday, Domain Renewal"
+                  />
+
+                  <FormSelect
+                    label="Category"
+                    value={category}
+                    onChange={(val: any) => setCategory(val)}
+                    options={EVENT_CATEGORIES.map((c) => ({
+                      value: c,
+                      label: formatConstantLabel(c),
+                    }))}
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <DatePicker
@@ -433,18 +657,20 @@ export const EventsScreen: React.FC = () => {
                   />
 
                   <DatePicker
-                    label="End Date (Optional)"
+                    label="End Date"
                     value={endDate}
                     onChange={(val) => setEndDate(val)}
+                    placeholder="Optional"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormInput
-                    label="Location / Link"
+                    label="Location"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    placeholder="e.g. Home, Google Meet"
+                    placeholder="e.g. Home, Google Meet (optional)"
+                    icon={<MapPin className="w-4 h-4" />}
                   />
 
                   <FormSelect
@@ -481,7 +707,7 @@ export const EventsScreen: React.FC = () => {
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                             isSelected
                               ? 'bg-indigo-600 text-white shadow-sm'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                           }`}
                         >
                           {opt.label}
@@ -493,33 +719,26 @@ export const EventsScreen: React.FC = () => {
 
                 <FormTextarea
                   label="Description / Notes"
-                  rows={2}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional details or instructions..."
+                  placeholder="Additional details, gift ideas, renewal instructions..."
                 />
 
-                <div className="flex items-center justify-end gap-2.5 pt-4">
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all cursor-pointer"
                   >
-                    {saving ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Saving...</span>
-                      </>
-                    ) : (
-                      <span>{editingEvent ? 'Update Event' : 'Schedule Event'}</span>
-                    )}
+                    {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{editingEvent ? 'Save Changes' : 'Create Event'}</span>
                   </button>
                 </div>
               </form>

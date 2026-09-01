@@ -25,7 +25,7 @@ export class PasswordEntry {
   @Prop({ default: '' })
   notes: string;
 
-  @Prop({ default: 'General', trim: true })
+  @Prop({ default: 'OTHER', trim: true, uppercase: true })
   category: string;
 
   createdAt: Date;

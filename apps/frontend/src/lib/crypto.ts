@@ -48,9 +48,37 @@ export async function deriveKey(masterPassword: string): Promise<CryptoKey> {
     },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
-    false,
+    true,
     ['encrypt', 'decrypt'],
   );
+}
+
+const VAULT_KEY_STORAGE = 'nestwell_vault_key';
+
+export async function persistCryptoKey(key: CryptoKey): Promise<void> {
+  const jwk = await window.crypto.subtle.exportKey('jwk', key);
+  sessionStorage.setItem(VAULT_KEY_STORAGE, JSON.stringify(jwk));
+}
+
+export async function restoreCryptoKey(): Promise<CryptoKey | null> {
+  const raw = sessionStorage.getItem(VAULT_KEY_STORAGE);
+  if (!raw) return null;
+  try {
+    return await window.crypto.subtle.importKey(
+      'jwk',
+      JSON.parse(raw),
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt'],
+    );
+  } catch {
+    sessionStorage.removeItem(VAULT_KEY_STORAGE);
+    return null;
+  }
+}
+
+export function clearPersistedCryptoKey() {
+  sessionStorage.removeItem(VAULT_KEY_STORAGE);
 }
 
 /**

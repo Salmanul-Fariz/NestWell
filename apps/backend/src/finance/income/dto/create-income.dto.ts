@@ -16,7 +16,7 @@ import { FinanceRecurrenceDto } from '../../expense/dto/create-expense.dto';
 
 export class CreateIncomeDto {
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   amount: number;
 
   @IsOptional()

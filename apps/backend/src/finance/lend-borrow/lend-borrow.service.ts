@@ -123,8 +123,8 @@ export class LendBorrowService {
       _id: new Types.ObjectId(),
       type: settlementType,
       amount: settleAmount,
-      date: new Date(),
-      note: 'Settlement payment',
+      date: dto.date ? new Date(dto.date) : new Date(),
+      note: dto.note?.trim() || 'Settlement payment',
       isSettlement: true,
       createdAt: new Date(),
     };

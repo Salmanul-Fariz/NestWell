@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ExpenseService } from './expense.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -9,8 +9,12 @@ export class ExpenseController {
   constructor(private readonly expenseService: ExpenseService) {}
 
   @Get()
-  findAll(@CurrentUser('userId') userId: string) {
-    return this.expenseService.findAll(userId);
+  findAll(
+    @CurrentUser('userId') userId: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+  ) {
+    return this.expenseService.findAll(userId, { month, year });
   }
 
   @Post()

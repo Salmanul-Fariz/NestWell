@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
 import { encryptPassword, decryptPassword, generateStrongPassword } from '../../lib/crypto';
 import { useAuth } from '../../lib/auth-context';
+import { apiErrorMessage } from '../../lib/utils';
+import { VAULT_CATEGORIES, formatConstantLabel, toConstantCase } from '@nestwell/shared-types';
 import { FormInput, FormSelect, FormTextarea } from '../../components/ui/FormControls';
 import {
   KeyRound,
@@ -20,15 +22,9 @@ import {
   User,
 } from 'lucide-react';
 
-export const VAULT_PRESET_CATEGORIES = [
-  'Personal',
-  'Work',
-  'Banking',
-  'Social',
-  'Developer',
-  'Entertainment',
-  'Other',
-] as const;
+const ALL_CATEGORIES = 'ALL';
+const CUSTOM_CATEGORY = '__CUSTOM__';
+const DEFAULT_CATEGORY = 'PERSONAL';
 
 interface PasswordEntry {
   _id: string;
@@ -48,7 +44,7 @@ export const PasswordVaultScreen: React.FC = () => {
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedCategory, setSelectedCategory] = useState<string>(ALL_CATEGORIES);
 
   const [decryptedMap, setDecryptedMap] = useState<Record<string, string>>({});
   const [revealedIds, setRevealedIds] = useState<Record<string, boolean>>({});
@@ -61,7 +57,7 @@ export const PasswordVaultScreen: React.FC = () => {
   const [modalUsername, setModalUsername] = useState('');
   const [modalPassword, setModalPassword] = useState('');
   const [modalUrl, setModalUrl] = useState('');
-  const [modalCategory, setModalCategory] = useState<string>('Personal');
+  const [modalCategory, setModalCategory] = useState<string>(DEFAULT_CATEGORY);
   const [modalCustomCategory, setModalCustomCategory] = useState('');
   const [modalNotes, setModalNotes] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
@@ -128,30 +124,42 @@ export const PasswordVaultScreen: React.FC = () => {
     }
   };
 
-  const openModal = (entry?: PasswordEntry) => {
+  const openModal = async (entry?: PasswordEntry) => {
     setModalError(null);
     if (entry) {
       setEditingEntry(entry);
       setModalTitle(entry.title);
       setModalUsername(entry.username || '');
       setModalUrl(entry.url || '');
-      const isPreset = (VAULT_PRESET_CATEGORIES as readonly string[]).includes(entry.category || '');
-      if (isPreset) {
-        setModalCategory(entry.category || 'Personal');
+      const stored = toConstantCase(entry.category || '') || DEFAULT_CATEGORY;
+      if ((VAULT_CATEGORIES as readonly string[]).includes(stored)) {
+        setModalCategory(stored);
         setModalCustomCategory('');
       } else {
-        setModalCategory('Custom');
-        setModalCustomCategory(entry.category || '');
+        setModalCategory(CUSTOM_CATEGORY);
+        setModalCustomCategory(formatConstantLabel(stored));
       }
       setModalNotes(entry.notes || '');
-      setModalPassword(decryptedMap[entry._id] || '');
+
+      let existingPassword = decryptedMap[entry._id] || '';
+      if (!existingPassword && cryptoKey) {
+        try {
+          existingPassword = await decryptPassword(entry.encryptedPassword, cryptoKey);
+          setDecryptedMap((prev) => ({ ...prev, [entry._id]: existingPassword }));
+        } catch {
+          setModalError(
+            'Could not decrypt this password. Unlock with the same account password used when it was saved.',
+          );
+        }
+      }
+      setModalPassword(existingPassword);
     } else {
       setEditingEntry(null);
       setModalTitle('');
       setModalUsername('');
       setModalPassword(generateStrongPassword(20));
       setModalUrl('');
-      setModalCategory('Personal');
+      setModalCategory(DEFAULT_CATEGORY);
       setModalCustomCategory('');
       setModalNotes('');
     }
@@ -169,8 +177,11 @@ export const PasswordVaultScreen: React.FC = () => {
       return;
     }
 
+    // Categories are always stored in CONSTANT_CASE, whatever the user typed.
     const finalCategory =
-      modalCategory === 'Custom' ? modalCustomCategory.trim() || 'General' : modalCategory;
+      modalCategory === CUSTOM_CATEGORY
+        ? toConstantCase(modalCustomCategory) || 'OTHER'
+        : modalCategory;
 
     setModalSaving(true);
     setModalError(null);
@@ -198,23 +209,41 @@ export const PasswordVaultScreen: React.FC = () => {
 
       setIsModalOpen(false);
     } catch (err: any) {
-      setModalError(err.response?.data?.message || 'Failed to save credential.');
+      setModalError(apiErrorMessage(err, 'Failed to save credential.'));
     } finally {
       setModalSaving(false);
     }
   };
 
-  const categories = useMemo(() => {
-    const set = new Set<string>(VAULT_PRESET_CATEGORIES);
+  /** Only categories that are actually in use, so the filter stays short as the vault grows. */
+  const categoryOptions = useMemo(() => {
+    const counts = new Map<string, number>();
     entries.forEach((e) => {
-      if (e.category) set.add(e.category);
+      const key = toConstantCase(e.category || '') || 'OTHER';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     });
-    return ['All', ...Array.from(set)];
+
+    const used = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([value, count]) => ({
+        value,
+        label: `${formatConstantLabel(value)} (${count})`,
+      }));
+
+    return [{ value: ALL_CATEGORIES, label: `All categories (${entries.length})` }, ...used];
   }, [entries]);
+
+  useEffect(() => {
+    if (!categoryOptions.some((opt) => opt.value === selectedCategory)) {
+      setSelectedCategory(ALL_CATEGORIES);
+    }
+  }, [categoryOptions, selectedCategory]);
 
   const filteredEntries = useMemo(() => {
     return entries.filter((e) => {
-      const matchesCat = selectedCategory === 'All' || e.category === selectedCategory;
+      const matchesCat =
+        selectedCategory === ALL_CATEGORIES ||
+        (toConstantCase(e.category || '') || 'OTHER') === selectedCategory;
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         !searchQuery ||
@@ -250,35 +279,37 @@ export const PasswordVaultScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Search & Folder/Category Pills */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="w-full sm:max-w-md">
-            <FormInput
-              icon={<Search className="w-4 h-4" />}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search secrets, usernames, or domains..."
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto py-1">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                  selectedCategory === cat
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+      {/* Search & category filter */}
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+        <div className="flex-1">
+          <FormInput
+            icon={<Search className="w-4 h-4" />}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search secrets, usernames, or domains..."
+          />
         </div>
+
+        <div className="w-full sm:w-56 shrink-0">
+          <FormSelect
+            value={selectedCategory}
+            onChange={(val) => setSelectedCategory(val)}
+            options={categoryOptions}
+          />
+        </div>
+
+        {(selectedCategory !== ALL_CATEGORIES || searchQuery) && (
+          <button
+            onClick={() => {
+              setSelectedCategory(ALL_CATEGORIES);
+              setSearchQuery('');
+            }}
+            className="h-11 px-4 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+          >
+            Reset
+          </button>
+        )}
       </div>
 
       {/* Credentials Grid */}
@@ -292,7 +323,9 @@ export const PasswordVaultScreen: React.FC = () => {
           <KeyRound className="w-8 h-8 mx-auto text-slate-400 mb-2" />
           <p className="font-semibold text-sm text-slate-700 dark:text-slate-300">No passwords found</p>
           <p className="text-xs text-slate-400 mt-1">
-            {searchQuery ? 'Try changing your search keywords.' : 'Click "+ Add Password" to store your first credential.'}
+            {searchQuery
+              ? 'Try changing your search keywords.'
+              : 'Click "+ Add Password" to store your first credential.'}
           </p>
         </div>
       ) : (
@@ -317,9 +350,7 @@ export const PasswordVaultScreen: React.FC = () => {
                         {item.title.slice(0, 2).toUpperCase()}
                       </div>
                       <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm leading-tight">
-                          {item.title}
-                        </h4>
+                        <h4 className="font-bold text-slate-900 dark:text-white text-sm leading-tight">{item.title}</h4>
                         {item.url && (
                           <a
                             href={item.url.startsWith('http') ? item.url : `https://${item.url}`}
@@ -335,7 +366,7 @@ export const PasswordVaultScreen: React.FC = () => {
                     </div>
 
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                      {item.category || 'Personal'}
+                      {formatConstantLabel(item.category || DEFAULT_CATEGORY)}
                     </span>
                   </div>
 
@@ -363,7 +394,9 @@ export const PasswordVaultScreen: React.FC = () => {
                       <button
                         onClick={() => handleCopyPassword(item)}
                         className={`p-1 transition-colors cursor-pointer ${
-                          isCopied ? 'text-emerald-500 font-bold' : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                          isCopied
+                            ? 'text-emerald-500 font-bold'
+                            : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
                         }`}
                         title="Copy Password"
                       >
@@ -453,18 +486,23 @@ export const PasswordVaultScreen: React.FC = () => {
                       value={modalCategory}
                       onChange={(val) => setModalCategory(val)}
                       options={[
-                        ...VAULT_PRESET_CATEGORIES.map((c) => ({ value: c, label: c })),
-                        { value: 'Custom', label: '+ Custom Folder...' },
+                        ...VAULT_CATEGORIES.map((c) => ({ value: c, label: formatConstantLabel(c) })),
+                        { value: CUSTOM_CATEGORY, label: '+ Custom Folder...' },
                       ]}
                     />
 
-                    {modalCategory === 'Custom' && (
+                    {modalCategory === CUSTOM_CATEGORY && (
                       <div className="mt-2">
                         <FormInput
                           placeholder="Type folder name..."
                           value={modalCustomCategory}
                           onChange={(e) => setModalCustomCategory(e.target.value)}
                         />
+                        {modalCustomCategory.trim() && (
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            Saved as <span className="font-mono">{toConstantCase(modalCustomCategory)}</span>
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -488,9 +526,7 @@ export const PasswordVaultScreen: React.FC = () => {
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Password *
-                    </label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Password *</label>
                     <button
                       type="button"
                       onClick={() => setModalPassword(generateStrongPassword(20))}

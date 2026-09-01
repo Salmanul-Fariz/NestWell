@@ -32,7 +32,7 @@ export class FinanceRecurrenceDto {
 
 export class CreateExpenseDto {
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   amount: number;
 
   @IsOptional()

@@ -10,14 +10,20 @@ import { PasswordVaultModule } from './password-vault/password-vault.module';
 import { EventsModule } from './events/events.module';
 import { ExpenseModule } from './finance/expense/expense.module';
 import { IncomeModule } from './finance/income/income.module';
-import { EmiModule } from './finance/emi/emi.module';
 import { PartyModule } from './finance/party/party.module';
 import { LendBorrowModule } from './finance/lend-borrow/lend-borrow.module';
 import { ReportsModule } from './finance/reports/reports.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+
+import { ScheduleModule } from '@nestjs/schedule';
+import { RecurringFinanceSchedulerService } from './finance/recurring-scheduler.service';
+import { Expense, ExpenseSchema } from './finance/expense/schemas/expense.schema';
+import { Income, IncomeSchema } from './finance/income/schemas/income.schema';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -31,20 +37,25 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
       }),
       inject: [ConfigService],
     }),
+    MongooseModule.forFeature([
+      { name: Income.name, schema: IncomeSchema },
+      { name: Expense.name, schema: ExpenseSchema },
+    ]),
     UsersModule,
     AuthModule,
     PasswordVaultModule,
     EventsModule,
     ExpenseModule,
     IncomeModule,
-    EmiModule,
     PartyModule,
     LendBorrowModule,
     ReportsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    RecurringFinanceSchedulerService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

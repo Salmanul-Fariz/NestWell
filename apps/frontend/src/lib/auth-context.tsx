@@ -1,6 +1,19 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { api } from './api';
-import { deriveKey } from './crypto';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import {
+  ACCESS_REFRESH_LEAD_MS,
+  ACCESS_TOKEN_MS,
+  api,
+  getLastRefreshAt,
+  markSessionRefreshed,
+  refreshSession,
+  setSessionExpiredHandler,
+} from './api';
+import {
+  clearPersistedCryptoKey,
+  deriveKey,
+  persistCryptoKey,
+  restoreCryptoKey,
+} from './crypto';
 
 export interface User {
   userId: string;
@@ -12,11 +25,8 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   cryptoKey: CryptoKey | null;
-  isAppLocked: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  unlockApp: (password: string) => Promise<boolean>;
-  lockApp: () => void;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
@@ -27,23 +37,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
-  const [isAppLocked, setIsAppLocked] = useState<boolean>(false);
+  const userRef = useRef<User | null>(null);
+
+  const applyVaultKey = async (password: string) => {
+    const key = await deriveKey(password);
+    await persistCryptoKey(key);
+    setCryptoKey(key);
+  };
+
+  const clearSession = () => {
+    setUser(null);
+    userRef.current = null;
+    setCryptoKey(null);
+    clearPersistedCryptoKey();
+  };
 
   const checkAuth = async () => {
     try {
       const res = await api.get<User>('/auth/me');
       setUser(res.data);
-      // When user is restored via session cookie without master password entered, lock the app screen
-      setIsAppLocked(true);
+      userRef.current = res.data;
+      markSessionRefreshed();
+      const storedKey = await restoreCryptoKey();
+      setCryptoKey(storedKey);
     } catch {
+      // If /auth/me failed (e.g. access token expired during page load), attempt explicit refresh
       try {
-        await api.post('/auth/refresh');
+        await refreshSession();
         const res = await api.get<User>('/auth/me');
         setUser(res.data);
-        setIsAppLocked(true);
+        userRef.current = res.data;
+        markSessionRefreshed();
+        const storedKey = await restoreCryptoKey();
+        setCryptoKey(storedKey);
       } catch {
-        setUser(null);
-        setIsAppLocked(false);
+        clearSession();
       }
     } finally {
       setLoading(false);
@@ -56,63 +84,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string) => {
     const res = await api.post('/auth/login', { email, password });
-    setUser({
+    const nextUser = {
       userId: res.data.user.id,
       email: res.data.user.email,
       name: res.data.user.name,
-    });
-    // Derive key immediately on login so user enters unlocked state
-    try {
-      const key = await deriveKey(password);
-      setCryptoKey(key);
-      setIsAppLocked(false);
-    } catch {
-      setIsAppLocked(true);
-    }
+    };
+    setUser(nextUser);
+    userRef.current = nextUser;
+    markSessionRefreshed();
+    await applyVaultKey(password);
   };
 
   const register = async (name: string, email: string, password: string) => {
     const res = await api.post('/auth/register', { name, email, password });
-    setUser({
+    const nextUser = {
       userId: res.data.user.id,
       email: res.data.user.email,
       name: res.data.user.name,
-    });
-    // Derive key immediately on register
-    try {
-      const key = await deriveKey(password);
-      setCryptoKey(key);
-      setIsAppLocked(false);
-    } catch {
-      setIsAppLocked(true);
-    }
-  };
-
-  const unlockApp = async (password: string): Promise<boolean> => {
-    try {
-      const key = await deriveKey(password);
-      setCryptoKey(key);
-      setIsAppLocked(false);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const lockApp = () => {
-    setCryptoKey(null);
-    setIsAppLocked(true);
+    };
+    setUser(nextUser);
+    userRef.current = nextUser;
+    markSessionRefreshed();
+    await applyVaultKey(password);
   };
 
   const logout = async () => {
     try {
       await api.post('/auth/logout');
     } finally {
-      setUser(null);
-      setCryptoKey(null);
-      setIsAppLocked(false);
+      clearSession();
     }
   };
+
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      clearSession();
+    });
+    return () => setSessionExpiredHandler(null);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    /**
+     * Keeps the access token fresh while the app is open. There is deliberately no
+     * inactivity timeout: the session ends only when the refresh token expires or the
+     * user signs out. A failed refresh does not clear the session here either, since a
+     * transient network error should not sign anyone out — the response interceptor
+     * handles genuine 401s.
+     */
+    const maybeRefresh = () => {
+      if (!userRef.current) return;
+      if (Date.now() - getLastRefreshAt() < ACCESS_TOKEN_MS - ACCESS_REFRESH_LEAD_MS) {
+        return;
+      }
+      void refreshSession().catch(() => undefined);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') maybeRefresh();
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', maybeRefresh);
+    const intervalId = window.setInterval(maybeRefresh, 60_000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', maybeRefresh);
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
 
   return (
     <AuthContext.Provider
@@ -120,11 +162,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         cryptoKey,
-        isAppLocked,
         login,
         register,
-        unlockApp,
-        lockApp,
         logout,
         checkAuth,
       }}

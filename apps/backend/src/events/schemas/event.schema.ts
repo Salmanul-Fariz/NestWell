@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
-import { EVENT_RECURRENCE_FREQS } from '@nestwell/shared-types';
-import type { EventRecurrenceFreq } from '@nestwell/shared-types';
+import { EVENT_CATEGORIES, EVENT_RECURRENCE_FREQS } from '@nestwell/shared-types';
+import type { EventCategory, EventRecurrenceFreq } from '@nestwell/shared-types';
 
 export type EventDocument = Event & Document;
 
@@ -41,6 +41,14 @@ export class Event {
   @Prop({ required: true, trim: true })
   title: string;
 
+  @Prop({
+    type: String,
+    enum: EVENT_CATEGORIES,
+    default: 'REMINDER',
+    index: true,
+  })
+  category: EventCategory;
+
   @Prop({ default: '', trim: true })
   description: string;
 
@@ -50,8 +58,8 @@ export class Event {
   @Prop({ type: Date, required: true, index: true })
   startAt: Date;
 
-  @Prop({ type: Date, required: true })
-  endAt: Date;
+  @Prop({ type: Date, default: null })
+  endAt?: Date | null;
 
   @Prop({ type: Boolean, default: false })
   allDay: boolean;
@@ -61,6 +69,9 @@ export class Event {
 
   @Prop({ type: [EventReminderSchema], default: [] })
   reminders: EventReminder[];
+
+  @Prop({ type: [String], default: [] })
+  notifiedOccurrences: string[]; // stores key like "YYYY-MM-DD_<offsetMinutes>" to avoid duplicate alert sending
 
   createdAt: Date;
 }

@@ -38,10 +38,17 @@ export class PartyService {
   }
 
   async update(userId: string, id: string, dto: UpdatePartyDto): Promise<PartyDocument> {
+    const setData: Record<string, unknown> = {};
+    if (dto.name !== undefined) setData.name = dto.name;
+    if (dto.email !== undefined) setData.email = dto.email;
+    if (dto.phone !== undefined) setData.phone = dto.phone;
+    // notes is a non-nullable string in the schema, so clearing means an empty string.
+    if (dto.notes !== undefined) setData.notes = dto.notes ?? '';
+
     const updated = await this.partyModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) },
-        { $set: dto },
+        { $set: setData },
         { new: true },
       )
       .exec();

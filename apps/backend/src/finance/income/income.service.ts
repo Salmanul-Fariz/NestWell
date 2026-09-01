@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Income, IncomeDocument } from './schemas/income.schema';
 import { CreateIncomeDto } from './dto/create-income.dto';
 import { UpdateIncomeDto } from './dto/update-income.dto';
+import { buildDateFilter } from '../../common/utils/date-range';
 
 @Injectable()
 export class IncomeService {
@@ -12,11 +13,15 @@ export class IncomeService {
     private readonly incomeModel: Model<IncomeDocument>,
   ) {}
 
-  async findAll(userId: string): Promise<IncomeDocument[]> {
-    return this.incomeModel
-      .find({ userId: new Types.ObjectId(userId) })
-      .sort({ date: -1 })
-      .exec();
+  async findAll(
+    userId: string,
+    filter: { month?: string; year?: string } = {},
+  ): Promise<IncomeDocument[]> {
+    const query: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+    const dateFilter = buildDateFilter(filter.month, filter.year);
+    if (dateFilter) query.date = dateFilter;
+
+    return this.incomeModel.find(query).sort({ date: -1 }).exec();
   }
 
   async findOne(userId: string, id: string): Promise<IncomeDocument> {
@@ -49,7 +54,9 @@ export class IncomeService {
   async update(userId: string, id: string, dto: UpdateIncomeDto): Promise<IncomeDocument> {
     const updateData: any = { ...dto };
     if (dto.date) updateData.date = new Date(dto.date);
-    if (dto.recurrence) {
+    if (dto.recurring === false) {
+      updateData.recurrence = null;
+    } else if (dto.recurrence) {
       updateData.recurrence = {
         ...dto.recurrence,
         interval: dto.recurrence.interval ?? 1,

@@ -2,9 +2,11 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../../lib/api';
 import { FormInput, FormSelect, DatePicker } from '../../components/ui/FormControls';
+import { apiErrorMessage, formatDateOnly, todayDateOnly, toIsoUtcDate } from '../../lib/utils';
 import {
   EXPENSE_CATEGORIES,
   INCOME_SOURCES,
+  formatConstantLabel,
   type ExpenseCategory,
   type IncomeSource,
   type FinanceRecurrenceFreq,
@@ -17,6 +19,7 @@ import {
   DollarSign,
   Loader2,
   Repeat,
+  RepeatOff,
 } from 'lucide-react';
 
 interface ExpenseItem {
@@ -49,6 +52,24 @@ interface IncomeItem {
   createdAt: string;
 }
 
+const ALL_MONTHS = 'ALL';
+
+const MONTH_OPTIONS = [
+  { value: ALL_MONTHS, label: 'Whole year' },
+  ...[
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ].map((label, idx) => ({ value: String(idx + 1), label })),
+];
+
+const YEAR_OPTIONS = (() => {
+  const current = new Date().getFullYear();
+  return [current - 2, current - 1, current, current + 1].map((y) => ({
+    value: String(y),
+    label: String(y),
+  }));
+})();
+
 export const CashflowScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense');
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
@@ -60,18 +81,26 @@ export const CashflowScreen: React.FC = () => {
   const [category, setCategory] = useState<ExpenseCategory>('FOOD');
   const [source, setSource] = useState<IncomeSource>('SALARY');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayDateOnly());
   const [recurring, setRecurring] = useState(false);
   const [freq, setFreq] = useState<FinanceRecurrenceFreq>('MONTHLY');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [filterMonth, setFilterMonth] = useState<string>(String(new Date().getMonth() + 1));
+  const [filterYear, setFilterYear] = useState<string>(String(new Date().getFullYear()));
+
   const fetchData = async () => {
     setLoading(true);
     try {
+      // An empty month means "whole year"; the backend skips the date filter without a year.
+      const params = {
+        year: filterYear,
+        ...(filterMonth === ALL_MONTHS ? {} : { month: filterMonth }),
+      };
       const [expRes, incRes] = await Promise.all([
-        api.get('/finance/expense'),
-        api.get('/finance/income'),
+        api.get('/finance/expense', { params }),
+        api.get('/finance/income', { params }),
       ]);
       setExpenses(expRes.data);
       setIncomes(incRes.data);
@@ -84,13 +113,13 @@ export const CashflowScreen: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [filterMonth, filterYear]);
 
   const openCreateModal = () => {
     setError(null);
     setAmount('');
     setNote('');
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(todayDateOnly());
     setRecurring(false);
     setFreq('MONTHLY');
     setCategory('FOOD');
@@ -108,7 +137,7 @@ export const CashflowScreen: React.FC = () => {
     setSaving(true);
     setError(null);
 
-    const parsedDate = new Date(date).toISOString();
+    const parsedDate = toIsoUtcDate(date);
 
     const payload = {
       amount: parseFloat(amount),
@@ -127,20 +156,16 @@ export const CashflowScreen: React.FC = () => {
 
     try {
       if (activeTab === 'expense') {
-        const res = await api.post('/finance/expense', { ...payload, category });
-        setExpenses((prev) => [res.data, ...prev]);
+        await api.post('/finance/expense', { ...payload, category });
       } else {
-        const res = await api.post('/finance/income', { ...payload, source });
-        setIncomes((prev) => [res.data, ...prev]);
+        await api.post('/finance/income', { ...payload, source });
       }
       setIsModalOpen(false);
+      // Refetch rather than prepend: a saved entry may fall outside the active period,
+      // and silently showing it here would misrepresent the filter.
+      await fetchData();
     } catch (err: any) {
-      const msg =
-        err.response?.data?.message ||
-        (Array.isArray(err.response?.data?.message)
-          ? err.response?.data?.message.join(', ')
-          : 'Failed to record entry');
-      setError(msg);
+      setError(apiErrorMessage(err, 'Failed to record entry'));
     } finally {
       setSaving(false);
     }
@@ -155,8 +180,25 @@ export const CashflowScreen: React.FC = () => {
       } else {
         setIncomes((prev) => prev.filter((i) => i._id !== id));
       }
-    } catch {
-      alert('Delete failed');
+    } catch (err) {
+      console.error('Failed to delete', err);
+    }
+  };
+
+  const handleToggleRecurring = async (id: string, type: 'expense' | 'income', currentRecurring: boolean) => {
+    try {
+      await api.patch(`/finance/${type}/${id}`, { recurring: !currentRecurring });
+      if (type === 'expense') {
+        setExpenses((prev) =>
+          prev.map((e) => (e._id === id ? { ...e, recurring: !currentRecurring, recurrence: !currentRecurring ? e.recurrence : undefined } : e)),
+        );
+      } else {
+        setIncomes((prev) =>
+          prev.map((i) => (i._id === id ? { ...i, recurring: !currentRecurring, recurrence: !currentRecurring ? i.recurrence : undefined } : i)),
+        );
+      }
+    } catch (err) {
+      console.error('Failed to toggle recurring', err);
     }
   };
 
@@ -169,6 +211,11 @@ export const CashflowScreen: React.FC = () => {
   }, [incomes]);
 
   const netBalance = totalIncome - totalExpense;
+
+  const periodLabel =
+    filterMonth === ALL_MONTHS
+      ? filterYear
+      : `${MONTH_OPTIONS.find((m) => m.value === filterMonth)?.label} ${filterYear}`;
 
   return (
     <div className="space-y-6">
@@ -183,7 +230,22 @@ export const CashflowScreen: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-36">
+            <FormSelect
+              value={filterMonth}
+              onChange={(val) => setFilterMonth(val)}
+              options={MONTH_OPTIONS}
+            />
+          </div>
+          <div className="w-24">
+            <FormSelect
+              value={filterYear}
+              onChange={(val) => setFilterYear(val)}
+              options={YEAR_OPTIONS}
+            />
+          </div>
+
           <button
             onClick={openCreateModal}
             className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md flex items-center gap-2 transition-all cursor-pointer"
@@ -205,7 +267,9 @@ export const CashflowScreen: React.FC = () => {
           <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
             ₹{totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </h3>
-          <p className="text-[11px] text-slate-400 mt-1">{incomes.length} recorded deposits</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {incomes.length} deposits in {periodLabel}
+          </p>
         </div>
 
         <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
@@ -218,7 +282,9 @@ export const CashflowScreen: React.FC = () => {
           <h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400">
             ₹{totalExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </h3>
-          <p className="text-[11px] text-slate-400 mt-1">{expenses.length} recorded payments</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {expenses.length} payments in {periodLabel}
+          </p>
         </div>
 
         <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
@@ -229,7 +295,7 @@ export const CashflowScreen: React.FC = () => {
             </div>
           </div>
           <h3 className={`text-2xl font-bold ${netBalance >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>
-            ₹{netBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            {netBalance < 0 ? `-₹${Math.abs(netBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : `₹${netBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
           </h3>
           <p className="text-[11px] text-slate-400 mt-1">{netBalance >= 0 ? 'Positive balance' : 'Negative cashflow'}</p>
         </div>
@@ -272,10 +338,11 @@ export const CashflowScreen: React.FC = () => {
         <div className="p-12 text-center rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-500">
           <DollarSign className="w-8 h-8 mx-auto text-slate-400 mb-2" />
           <p className="font-semibold text-sm text-slate-700 dark:text-slate-300">
-            No {activeTab} records found
+            No {activeTab} records in {periodLabel}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            Click "+ Record {activeTab === 'expense' ? 'Expense' : 'Income'}" to track your cashflow.
+            Try another month, or click "+ Record {activeTab === 'expense' ? 'Expense' : 'Income'}" to
+            track your cashflow.
           </p>
         </div>
       ) : (
@@ -296,7 +363,7 @@ export const CashflowScreen: React.FC = () => {
                 {(activeTab === 'expense' ? expenses : incomes).map((item: any) => (
                   <tr key={item._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">
-                      {new Date(item.date).toLocaleDateString()}
+                      {formatDateOnly(item.date)}
                     </td>
                     <td className="py-3.5 px-4">
                       <span className="capitalize px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium border border-slate-200 dark:border-slate-700">
@@ -318,17 +385,28 @@ export const CashflowScreen: React.FC = () => {
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-sm">
                       <span className={activeTab === 'expense' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>
-                        {activeTab === 'expense' ? '-' : '+'}₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {activeTab === 'expense' ? '-₹' : '+₹'}{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => handleDelete(item._id, activeTab)}
-                        className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        {item.recurring && (
+                          <button
+                            onClick={() => handleToggleRecurring(item._id, activeTab, true)}
+                            className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-400 hover:text-amber-600 transition-colors cursor-pointer"
+                            title="Turn off recurring"
+                          >
+                            <RepeatOff className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(item._id, activeTab)}
+                          className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -391,7 +469,7 @@ export const CashflowScreen: React.FC = () => {
                       onChange={(val: any) => setCategory(val)}
                       options={EXPENSE_CATEGORIES.map((cat) => ({
                         value: cat,
-                        label: cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase(),
+                        label: formatConstantLabel(cat),
                       }))}
                     />
                   ) : (
@@ -401,7 +479,7 @@ export const CashflowScreen: React.FC = () => {
                       onChange={(val: any) => setSource(val)}
                       options={INCOME_SOURCES.map((src) => ({
                         value: src,
-                        label: src.charAt(0).toUpperCase() + src.slice(1).toLowerCase(),
+                        label: formatConstantLabel(src),
                       }))}
                     />
                   )}

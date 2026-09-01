@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { api } from '../../lib/api';
+import { apiErrorMessage } from '../../lib/utils';
+import { formatConstantLabel } from '@nestwell/shared-types';
 import {
   Select,
   SelectContent,
@@ -28,9 +30,9 @@ import {
   TrendingDown,
   DollarSign,
   PieChart as PieIcon,
-  CreditCard,
   Users,
   Loader2,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -44,6 +46,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   education: '#6366F1',
   subscriptions: '#F43F5E',
   other: '#64748B',
+  lend: '#0EA5E9',
+  borrow: '#F97316',
 };
 
 const MONTH_NAMES = [
@@ -51,41 +55,75 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+const FULL_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const YEAR_OPTIONS = (() => {
+  const current = new Date().getFullYear();
+  return [current - 2, current - 1, current, current + 1];
+})();
+
+const money = (value: number) =>
+  `${value < 0 ? '-₹' : '₹'}${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+interface ReportPayload {
+  totalIncome: number;
+  totalExpense: number;
+  totalCashBalance: number;
+  monthSavings: number;
+  netLendBalance: number;
+  netBorrowBalance: number;
+  totalLendGiven?: number;
+  totalBorrowReceived?: number;
+  totalRepaymentsReceived?: number;
+  totalRepaymentsPaid?: number;
+  netSavings: number;
+  expensesByCategory?: Array<{ _id: string; totalAmount: number }>;
+  weeks?: Array<{
+    week: number;
+    income: number;
+    expense: number;
+    lend: number;
+    borrow: number;
+    transactions: number;
+    outflow: number;
+    net: number;
+  }>;
+  months?: Array<{
+    month: number;
+    income: number;
+    expense: number;
+    lend: number;
+    borrow: number;
+    transactions: number;
+    outflow: number;
+    netSavings: number;
+  }>;
+}
+
 export const ReportsScreen: React.FC = () => {
   const [viewMode, setViewMode] = useState<'monthly' | 'yearly'>('monthly');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [monthlyReport, setMonthlyReport] = useState<any>(null);
-  const [yearlyReport, setYearlyReport] = useState<any>(null);
-  const [emis, setEmis] = useState<any[]>([]);
-  const [ledgers, setLedgers] = useState<any[]>([]);
+  const [monthlyReport, setMonthlyReport] = useState<ReportPayload | null>(null);
+  const [yearlyReport, setYearlyReport] = useState<ReportPayload | null>(null);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
       if (viewMode === 'monthly') {
-        const [repRes, emiRes, lendRes] = await Promise.all([
-          api.get('/finance/reports/monthly', {
-            params: { month: selectedMonth, year: selectedYear },
-          }),
-          api.get('/finance/emi'),
-          api.get('/finance/lend-borrow'),
-        ]);
+        const repRes = await api.get<ReportPayload>('/finance/reports/monthly', {
+          params: { month: selectedMonth, year: selectedYear },
+        });
         setMonthlyReport(repRes.data);
-        setEmis(emiRes.data);
-        setLedgers(lendRes.data);
       } else {
-        const [repRes, emiRes, lendRes] = await Promise.all([
-          api.get('/finance/reports/yearly', {
-            params: { year: selectedYear },
-          }),
-          api.get('/finance/emi'),
-          api.get('/finance/lend-borrow'),
-        ]);
+        const repRes = await api.get<ReportPayload>('/finance/reports/yearly', {
+          params: { year: selectedYear },
+        });
         setYearlyReport(repRes.data);
-        setEmis(emiRes.data);
-        setLedgers(lendRes.data);
       }
     } catch (err) {
       console.error('Failed to load financial reports', err);
@@ -98,92 +136,78 @@ export const ReportsScreen: React.FC = () => {
     fetchDashboardData();
   }, [viewMode, selectedMonth, selectedYear]);
 
-  // Aggregate KPI figures
-  const totalIncome =
-    viewMode === 'monthly'
-      ? monthlyReport?.totalIncome || 0
-      : yearlyReport?.totalIncome || 0;
+  const report = viewMode === 'monthly' ? monthlyReport : yearlyReport;
+  const totalIncome = report?.totalIncome || 0;
+  const totalExpense = report?.totalExpense || 0;
+  const totalCashBalance = report?.totalCashBalance || 0;
+  const monthSavings = report?.monthSavings ?? totalIncome - totalExpense;
+  const netLendBalance = report?.netLendBalance || 0;
+  const netBorrowBalance = report?.netBorrowBalance || 0;
+  const savingsRate = totalIncome > 0 ? Math.round((monthSavings / totalIncome) * 100) : 0;
+  const periodLabel =
+    viewMode === 'monthly' ? `${FULL_MONTHS[selectedMonth - 1]} ${selectedYear}` : String(selectedYear);
 
-  const totalExpense =
-    viewMode === 'monthly'
-      ? monthlyReport?.totalExpense || 0
-      : yearlyReport?.totalExpense || 0;
-
-  const netSavings = totalIncome - totalExpense;
-  const savingsRate = totalIncome > 0 ? Math.round((netSavings / totalIncome) * 100) : 0;
-
-  // Loan paid amount total
-  const totalLoanPaidAmount = useMemo(() => {
-    let total = 0;
-    emis.forEach((loan) => {
-      loan.installments?.forEach((inst: any) => {
-        if (inst.paid) total += inst.amount;
-      });
-    });
-    return total;
-  }, [emis]);
-
-  // Lend & Borrow Net Position
-  const { totalToReceive, totalToPay } = useMemo(() => {
-    let toReceive = 0;
-    let toPay = 0;
-    ledgers.forEach((l) => {
-      if (l.balance > 0) toReceive += l.balance;
-      else if (l.balance < 0) toPay += Math.abs(l.balance);
-    });
-    return { totalToReceive: toReceive, totalToPay: toPay };
-  }, [ledgers]);
-
-  // Format Category Breakdown for Pie Chart
   const pieData = useMemo(() => {
-    if (!monthlyReport?.expensesByCategory) return [];
-    return monthlyReport.expensesByCategory.map((item: any) => {
+    const source = report?.expensesByCategory ?? [];
+    const slices = source.map((item) => {
       const catKey = (item._id || 'other').toString().toLowerCase();
-      const label = item._id ? item._id.charAt(0).toUpperCase() + item._id.slice(1).toLowerCase() : 'Other';
       return {
-        name: label,
+        name: formatConstantLabel(item._id || 'OTHER'),
         value: item.totalAmount,
         color: CATEGORY_COLORS[catKey] || '#6366F1',
       };
     });
-  }, [monthlyReport]);
+    if (netLendBalance > 0) {
+      slices.push({ name: 'Net Lend (Owed to you)', value: netLendBalance, color: CATEGORY_COLORS.lend });
+    }
+    if (netBorrowBalance > 0) {
+      slices.push({ name: 'Net Borrow (You owe)', value: netBorrowBalance, color: CATEGORY_COLORS.borrow });
+    }
+    return slices;
+  }, [report, netLendBalance, netBorrowBalance]);
 
-  // Monthly breakdown trend or Yearly 12-month trajectory
   const yearlyChartData = useMemo(() => {
     if (!yearlyReport?.months) return [];
-    return yearlyReport.months.map((m: any) => ({
+    return yearlyReport.months.map((m) => ({
       name: MONTH_NAMES[m.month - 1],
       income: m.income,
       expense: m.expense,
-      savings: m.netSavings,
+      lend: m.lend,
+      borrow: m.borrow,
+      transactions: m.transactions,
+      outflow: m.outflow,
+      net: m.netSavings,
     }));
   }, [yearlyReport]);
 
   const monthlyTrendData = useMemo(() => {
-    return [
-      { name: 'Week 1', income: totalIncome * 0.3, expense: totalExpense * 0.25 },
-      { name: 'Week 2', income: totalIncome * 0.4, expense: totalExpense * 0.35 },
-      { name: 'Week 3', income: totalIncome * 0.15, expense: totalExpense * 0.2 },
-      { name: 'Week 4', income: totalIncome * 0.15, expense: totalExpense * 0.2 },
-    ];
-  }, [totalIncome, totalExpense]);
+    if (!monthlyReport?.weeks?.length) return [];
+    return monthlyReport.weeks.map((w) => ({
+      name: `Week ${w.week}`,
+      income: w.income,
+      expense: w.expense,
+      lend: w.lend,
+      borrow: w.borrow,
+      transactions: w.transactions,
+      outflow: w.outflow,
+      net: w.net,
+    }));
+  }, [monthlyReport]);
 
   return (
     <div className="space-y-6">
-      {/* Header & Date Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <PieIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-            Financial Reports & Analytics
+            Financial Ledger Summary
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Visual breakdown of income trends, expenses, loans, and peer balances
+            Complete snapshot of your liquidity, period savings, and peer-to-peer standings
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Monthly vs Yearly Toggle */}
           <div className="flex items-center p-1 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold">
             <button
               onClick={() => setViewMode('monthly')}
@@ -207,7 +231,6 @@ export const ReportsScreen: React.FC = () => {
             </button>
           </div>
 
-          {/* Date Picker Selectors */}
           <div className="flex items-center gap-2">
             {viewMode === 'monthly' && (
               <div className="w-36">
@@ -219,10 +242,7 @@ export const ReportsScreen: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[
-                      'January', 'February', 'March', 'April', 'May', 'June',
-                      'July', 'August', 'September', 'October', 'November', 'December'
-                    ].map((m, idx) => (
+                    {FULL_MONTHS.map((m, idx) => (
                       <SelectItem key={m} value={(idx + 1).toString()}>
                         {m}
                       </SelectItem>
@@ -241,7 +261,7 @@ export const ReportsScreen: React.FC = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[2024, 2025, 2026, 2027].map((y) => (
+                  {YEAR_OPTIONS.map((y) => (
                     <SelectItem key={y} value={y.toString()}>
                       {y}
                     </SelectItem>
@@ -249,31 +269,50 @@ export const ReportsScreen: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            <button
+              onClick={async () => {
+                try {
+                  const res = await api.get('/finance/reports/whatsapp-summary', {
+                    params: { month: selectedMonth, year: selectedYear },
+                  });
+                  alert(res.data.message || 'Financial overview sent to WhatsApp!');
+                } catch (err: any) {
+                  alert(apiErrorMessage(err, 'Failed to send WhatsApp financial overview'));
+                }
+              }}
+              className="h-9 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Send minimal monthly financial summary to WhatsApp"
+            >
+              <span>WhatsApp Overview</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Primary KPI Summary Cards */}
+      {/* Core Summary Metrics (4 Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 1. Total Cash Balance */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
+          className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm relative overflow-hidden"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Income</span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Cash Balance</span>
+            <div className={`w-8 h-8 rounded-lg ${totalCashBalance >= 0 ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'} flex items-center justify-center`}>
+              <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white font-mono">
-            ₹{totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          <h3 className={`text-2xl font-extrabold font-mono ${totalCashBalance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-600 dark:text-rose-400'}`}>
+            {money(totalCashBalance)}
           </h3>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
-            {viewMode === 'monthly' ? 'Deposited this month' : `Total deposited in ${selectedYear}`}
+          <p className="text-[11px] text-slate-400 mt-1">
+            Actual liquid cash available on hand
           </p>
         </motion.div>
 
+        {/* 2. This Month's Savings */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -281,19 +320,44 @@ export const ReportsScreen: React.FC = () => {
           className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Outflow</span>
-            <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-              <TrendingDown className="w-4 h-4" />
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              {viewMode === 'monthly' ? "This Month's Savings" : 'Yearly Savings'}
+            </span>
+            <div className={`w-8 h-8 rounded-lg ${monthSavings >= 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'} flex items-center justify-center`}>
+              {monthSavings >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white font-mono">
-            ₹{totalExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          <h3 className={`text-2xl font-extrabold font-mono ${monthSavings >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            {money(monthSavings)}
           </h3>
-          <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1 font-medium">
-            {viewMode === 'monthly' ? 'Spent this month' : `Total spending in ${selectedYear}`}
+          <p className="text-[11px] text-slate-400 mt-1">
+            {viewMode === 'monthly' ? 'Income − Expenses in current month' : 'Income − Expenses in year'}
+            {totalIncome > 0 ? ` · ${savingsRate}%` : ''}
           </p>
         </motion.div>
 
+        {/* 3. Net Lend Balance */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Net Lend Balance</span>
+            <div className="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center font-bold">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <h3 className="text-2xl font-extrabold font-mono text-sky-600 dark:text-sky-400">
+            {money(netLendBalance)}
+          </h3>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Total money owed to you by all parties
+          </p>
+        </motion.div>
+
+        {/* 4. Net Borrow Balance */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -301,74 +365,57 @@ export const ReportsScreen: React.FC = () => {
           className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Savings</span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Net Borrow Balance</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+              <ArrowLeftRight className="w-4 h-4" />
             </div>
           </div>
-          <h3 className={`text-2xl font-bold font-mono ${netSavings >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600'}`}>
-            ₹{netSavings.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          <h3 className="text-2xl font-extrabold font-mono text-amber-600 dark:text-amber-400">
+            {money(netBorrowBalance)}
           </h3>
-          <p className="text-[11px] text-slate-400 mt-1">{savingsRate}% savings rate</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total EMI Paid</span>
-            <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-              <CreditCard className="w-4 h-4" />
-            </div>
-          </div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white font-mono">
-            ₹{totalLoanPaidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </h3>
-          <p className="text-[11px] text-slate-400 mt-1">{emis.length} active loan plans</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Total money you owe to all parties
+          </p>
         </motion.div>
       </div>
 
-      {/* Lend & Borrow Peer Balances */}
+      {/* Period Income & Expense Breakdown Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
+        <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-              <Users className="w-5 h-5" />
+              <TrendingUp className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-xs text-slate-400 font-medium">To Receive from Contacts</span>
-              <h4 className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                +₹{totalToReceive.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              <span className="text-xs text-slate-400 font-medium">Total Income</span>
+              <h4 className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+                {money(totalIncome)}
               </h4>
             </div>
           </div>
           <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-            Lent
+            In {periodLabel}
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
+        <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
-              <Users className="w-5 h-5" />
+              <TrendingDown className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-xs text-slate-400 font-medium">To Pay to Contacts</span>
-              <h4 className="text-lg font-bold text-rose-600 dark:text-rose-400 font-mono">
-                -₹{totalToPay.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              <span className="text-xs text-slate-400 font-medium">Total Expense</span>
+              <h4 className="text-xl font-extrabold text-rose-600 dark:text-rose-400 font-mono">
+                {money(totalExpense)}
               </h4>
             </div>
           </div>
           <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20">
-            Borrowed
+            Spent in {periodLabel}
           </span>
         </div>
       </div>
 
-      {/* Visual Recharts Charts */}
       {loading ? (
         <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
           <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
@@ -376,14 +423,13 @@ export const ReportsScreen: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Main Trend Chart */}
           <div className="lg:col-span-7 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
             <div className="mb-4">
               <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                {viewMode === 'monthly' ? 'Monthly Cashflow Velocity' : `${selectedYear} Yearly Cashflow Trajectory`}
+                {viewMode === 'monthly' ? 'Monthly cashflow' : `${selectedYear} yearly cashflow`}
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {viewMode === 'monthly' ? 'Weekly inflow vs outflow breakdown' : '12-month income vs expense performance'}
+                Income vs expense vs party transactions for the selected period
               </p>
             </div>
 
@@ -400,11 +446,20 @@ export const ReportsScreen: React.FC = () => {
                         <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.4} />
                         <stop offset="95%" stopColor="#F43F5E" stopOpacity={0} />
                       </linearGradient>
+                      <linearGradient id="lendGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0EA5E9" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#0EA5E9" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="borrowGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#F97316" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#F97316" stopOpacity={0} />
+                      </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <Tooltip
+                      formatter={(val) => money(Number(val ?? 0))}
                       contentStyle={{
                         backgroundColor: 'rgba(15, 23, 42, 0.9)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -413,8 +468,11 @@ export const ReportsScreen: React.FC = () => {
                         color: '#fff',
                       }}
                     />
+                    <Legend wrapperStyle={{ fontSize: '11px' }} />
                     <Area type="monotone" dataKey="income" name="Income" stroke="#10B981" strokeWidth={2.5} fillOpacity={1} fill="url(#incomeGrad)" />
                     <Area type="monotone" dataKey="expense" name="Expense" stroke="#F43F5E" strokeWidth={2.5} fillOpacity={1} fill="url(#expenseGrad)" />
+                    <Area type="monotone" dataKey="lend" name="You Lent" stroke="#0EA5E9" strokeWidth={2.5} fillOpacity={1} fill="url(#lendGrad)" />
+                    <Area type="monotone" dataKey="borrow" name="You Borrowed" stroke="#F97316" strokeWidth={2.5} fillOpacity={1} fill="url(#borrowGrad)" />
                   </AreaChart>
                 ) : (
                   <BarChart data={yearlyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -422,7 +480,7 @@ export const ReportsScreen: React.FC = () => {
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <Tooltip
-                      formatter={(val: any) => `₹${Number(val).toLocaleString('en-IN')}`}
+                      formatter={(val) => money(Number(val ?? 0))}
                       contentStyle={{
                         backgroundColor: 'rgba(15, 23, 42, 0.9)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -431,24 +489,28 @@ export const ReportsScreen: React.FC = () => {
                         color: '#fff',
                       }}
                     />
+                    <Legend wrapperStyle={{ fontSize: '11px' }} />
                     <Bar dataKey="income" name="Income" fill="#10B981" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="expense" name="Expense" fill="#F43F5E" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="lend" name="You Lent" fill="#0EA5E9" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="borrow" name="You Borrowed" fill="#F97316" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 )}
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Expense Category Breakdown Pie Chart */}
           <div className="lg:col-span-5 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
             <div>
-              <h4 className="font-bold text-base text-slate-900 dark:text-white">Expense Distribution</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Categorical breakdown of outbound transactions</p>
+              <h4 className="font-bold text-base text-slate-900 dark:text-white">Outflow distribution</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Expenses plus lent and borrowed amounts in {periodLabel}
+              </p>
             </div>
 
             {pieData.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-xs italic">
-                No categorical expense entries recorded for this period.
+                No expense or party transactions recorded for this period.
               </div>
             ) : (
               <div className="h-[240px] w-full my-auto">
@@ -463,12 +525,12 @@ export const ReportsScreen: React.FC = () => {
                       paddingAngle={4}
                       dataKey="value"
                     >
-                      {pieData.map((entry: any, index: number) => (
+                      {pieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(val: any) => `₹${Number(val).toLocaleString('en-IN')}`}
+                      formatter={(val) => money(Number(val ?? 0))}
                       contentStyle={{
                         backgroundColor: 'rgba(15, 23, 42, 0.9)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',

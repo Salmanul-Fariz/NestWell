@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { FormInput, DatePicker } from '../../components/ui/FormControls';
+import { FormInput, FormTextarea, DatePicker } from '../../components/ui/FormControls';
+import { apiErrorMessage, formatDateOnly, todayDateOnly, toIsoUtcDate } from '../../lib/utils';
 import {
   Users,
   Plus,
@@ -10,13 +11,14 @@ import {
   CheckCircle2,
   Loader2,
   History,
+  Edit2,
 } from 'lucide-react';
 
 interface Party {
   _id: string;
   name: string;
-  phone?: string;
-  notes?: string;
+  phone?: string | null;
+  notes?: string | null;
 }
 
 interface LendBorrowEntry {
@@ -44,6 +46,7 @@ export const LendBorrowScreen: React.FC = () => {
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
 
   const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
+  const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [partyName, setPartyName] = useState('');
   const [partyPhone, setPartyPhone] = useState('');
   const [partyNotes, setPartyNotes] = useState('');
@@ -53,21 +56,19 @@ export const LendBorrowScreen: React.FC = () => {
   const [entryType, setEntryType] = useState<'LEND' | 'BORROW'>('LEND');
   const [entryAmount, setEntryAmount] = useState('');
   const [entryNote, setEntryNote] = useState('');
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
+  const [entryDate, setEntryDate] = useState(todayDateOnly());
   const [entrySaving, setEntrySaving] = useState(false);
 
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleAmount, setSettleAmount] = useState('');
   const [settleNote, setSettleNote] = useState('Settlement payment');
+  const [settleDate, setSettleDate] = useState(todayDateOnly());
   const [settleSaving, setSettleSaving] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [ledgersRes, partiesRes] = await Promise.all([
-        api.get('/finance/lend-borrow'),
-        api.get('/party'),
-      ]);
+      const [ledgersRes, partiesRes] = await Promise.all([api.get('/finance/lend-borrow'), api.get('/party')]);
       setLedgers(ledgersRes.data);
       setParties(partiesRes.data);
       if (ledgersRes.data.length > 0 && !selectedLedgerId) {
@@ -84,31 +85,61 @@ export const LendBorrowScreen: React.FC = () => {
     fetchData();
   }, []);
 
-  const handleCreateParty = async (e: React.FormEvent) => {
+  const openPartyModal = (party?: Party) => {
+    setEditingParty(party ?? null);
+    setPartyName(party?.name ?? '');
+    setPartyPhone(party?.phone ?? '');
+    setPartyNotes(party?.notes ?? '');
+    setIsPartyModalOpen(true);
+  };
+
+  const handleSaveParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partyName.trim()) return;
 
     setPartySaving(true);
     try {
-      const partyRes = await api.post('/party', {
+      const payload = {
         name: partyName.trim(),
-        phone: partyPhone.trim() || undefined,
-        notes: partyNotes.trim() || undefined,
-      });
+        phone: partyPhone.trim(),
+        notes: partyNotes.trim(),
+      };
 
-      const ledgerRes = await api.post('/finance/lend-borrow', {
-        partyId: partyRes.data._id,
-      });
+      if (editingParty) {
+        const res = await api.patch(`/party/${editingParty._id}`, payload);
+        const updated: Party = res.data;
+        setParties((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
+        // Ledgers may carry a populated party, so keep their copy in sync too.
+        setLedgers((prev) =>
+          prev.map((l) =>
+            typeof l.partyId === 'object' && l.partyId?._id === updated._id
+              ? { ...l, partyId: updated }
+              : l,
+          ),
+        );
+      } else {
+        const partyRes = await api.post('/party', {
+          name: payload.name,
+          phone: payload.phone || undefined,
+          notes: payload.notes || undefined,
+        });
 
-      setParties((prev) => [partyRes.data, ...prev]);
-      setLedgers((prev) => [ledgerRes.data, ...prev]);
-      setSelectedLedgerId(ledgerRes.data._id);
+        const ledgerRes = await api.post('/finance/lend-borrow', {
+          partyId: partyRes.data._id,
+        });
+
+        setParties((prev) => [partyRes.data, ...prev]);
+        setLedgers((prev) => [ledgerRes.data, ...prev]);
+        setSelectedLedgerId(ledgerRes.data._id);
+      }
+
       setIsPartyModalOpen(false);
+      setEditingParty(null);
       setPartyName('');
       setPartyPhone('');
       setPartyNotes('');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to create party');
+      alert(apiErrorMessage(err, editingParty ? 'Failed to update party' : 'Failed to create party'));
     } finally {
       setPartySaving(false);
     }
@@ -124,7 +155,7 @@ export const LendBorrowScreen: React.FC = () => {
         type: entryType,
         amount: parseFloat(entryAmount),
         note: entryNote.trim() || undefined,
-        date: new Date(entryDate).toISOString(),
+        date: toIsoUtcDate(entryDate),
       });
 
       setLedgers((prev) => prev.map((l) => (l._id === selectedLedgerId ? res.data : l)));
@@ -132,7 +163,7 @@ export const LendBorrowScreen: React.FC = () => {
       setEntryAmount('');
       setEntryNote('');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to record entry');
+      alert(apiErrorMessage(err, 'Failed to record entry'));
     } finally {
       setEntrySaving(false);
     }
@@ -147,12 +178,13 @@ export const LendBorrowScreen: React.FC = () => {
       const res = await api.post(`/finance/lend-borrow/${selectedLedgerId}/settle`, {
         amount: parseFloat(settleAmount),
         note: settleNote.trim() || undefined,
+        date: toIsoUtcDate(settleDate),
       });
 
       setLedgers((prev) => prev.map((l) => (l._id === selectedLedgerId ? res.data : l)));
       setIsSettleModalOpen(false);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to settle ledger');
+      alert(apiErrorMessage(err, 'Failed to settle ledger'));
     } finally {
       setSettleSaving(false);
     }
@@ -164,11 +196,14 @@ export const LendBorrowScreen: React.FC = () => {
 
   const activeBalance = activeLedger?.balance ?? 0;
 
-  const getPartyName = (partyId: any) => {
-    if (typeof partyId === 'object' && partyId?.name) return partyId.name;
-    const found = parties.find((p) => p._id === partyId);
-    return found?.name || 'Unknown Contact';
+  const getParty = (partyId: any): Party | undefined => {
+    if (typeof partyId === 'object' && partyId?._id) {
+      return parties.find((p) => p._id === partyId._id) ?? (partyId as Party);
+    }
+    return parties.find((p) => p._id === partyId);
   };
+
+  const getPartyName = (partyId: any) => getParty(partyId)?.name || 'Unknown Contact';
 
   return (
     <div className="space-y-6">
@@ -184,7 +219,7 @@ export const LendBorrowScreen: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsPartyModalOpen(true)}
+          onClick={() => openPartyModal()}
           className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md flex items-center gap-2 transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
@@ -232,7 +267,20 @@ export const LendBorrowScreen: React.FC = () => {
                       {name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h5 className="font-bold text-sm text-slate-900 dark:text-white">{name}</h5>
+                      <div className="flex items-center gap-1.5">
+                        <h5 className="font-bold text-sm text-slate-900 dark:text-white">{name}</h5>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const party = getParty(l.partyId);
+                            if (party) openPartyModal(party);
+                          }}
+                          className="p-1 rounded-md text-slate-300 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Edit party details"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
                       <span className="text-[11px] text-slate-400">{l.entries?.length || 0} entries</span>
                     </div>
                   </div>
@@ -243,11 +291,15 @@ export const LendBorrowScreen: React.FC = () => {
                         bal > 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : bal < 0
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-slate-400'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-slate-400'
                       }`}
                     >
-                      {bal > 0 ? `+₹${bal.toLocaleString()}` : bal < 0 ? `-₹${Math.abs(bal).toLocaleString()}` : 'Settled'}
+                      {bal > 0
+                        ? `+₹${bal.toLocaleString()}`
+                        : bal < 0
+                          ? `-₹${Math.abs(bal).toLocaleString()}`
+                          : 'Settled'}
                     </span>
                     <p className="text-[10px] text-slate-400">
                       {bal > 0 ? 'You receive' : bal < 0 ? 'You owe' : 'Zero balance'}
@@ -266,9 +318,26 @@ export const LendBorrowScreen: React.FC = () => {
                     <span className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
                       Active Ledger
                     </span>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
-                      {getPartyName(activeLedger.partyId)}
-                    </h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                        {getPartyName(activeLedger.partyId)}
+                      </h3>
+                      <button
+                        onClick={() => {
+                          const party = getParty(activeLedger.partyId);
+                          if (party) openPartyModal(party);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="Edit party details"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {getParty(activeLedger.partyId)?.phone && (
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {getParty(activeLedger.partyId)?.phone}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3">
@@ -279,21 +348,24 @@ export const LendBorrowScreen: React.FC = () => {
                           activeBalance > 0
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : activeBalance < 0
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-slate-400'
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-slate-400'
                         }`}
                       >
                         {activeBalance > 0
                           ? `+₹${activeBalance.toLocaleString('en-IN')}`
                           : activeBalance < 0
-                          ? `-₹${Math.abs(activeBalance).toLocaleString('en-IN')}`
-                          : '₹0.00 (Settled)'}
+                            ? `-₹${Math.abs(activeBalance).toLocaleString('en-IN')}`
+                            : '₹0.00 (Settled)'}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setIsEntryModalOpen(true)}
+                        onClick={() => {
+                          setEntryDate(todayDateOnly());
+                          setIsEntryModalOpen(true);
+                        }}
                         className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -338,8 +410,8 @@ export const LendBorrowScreen: React.FC = () => {
                                 entry.isSettlement
                                   ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
                                   : entry.type === 'LEND'
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                               }`}
                             >
                               {entry.isSettlement ? (
@@ -357,16 +429,14 @@ export const LendBorrowScreen: React.FC = () => {
                                   {entry.isSettlement
                                     ? 'Settlement Payment'
                                     : entry.type === 'LEND'
-                                    ? 'You Lent'
-                                    : 'You Borrowed'}
+                                      ? 'You Lent'
+                                      : 'You Borrowed'}
                                 </span>
                                 <span className="text-[10px] text-slate-400 font-mono">
-                                  {new Date(entry.date).toLocaleDateString()}
+                                  {formatDateOnly(entry.date)}
                                 </span>
                               </div>
-                              {entry.note && (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{entry.note}</p>
-                              )}
+                              {entry.note && <p className="text-xs text-slate-500 dark:text-slate-400">{entry.note}</p>}
                             </div>
                           </div>
 
@@ -375,8 +445,8 @@ export const LendBorrowScreen: React.FC = () => {
                               entry.isSettlement
                                 ? 'text-purple-600 dark:text-purple-400'
                                 : entry.type === 'LEND'
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-rose-600 dark:text-rose-400'
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-rose-600 dark:text-rose-400'
                             }`}
                           >
                             ₹{entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -405,11 +475,15 @@ export const LendBorrowScreen: React.FC = () => {
               className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl"
             >
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-bold text-lg text-slate-900 dark:text-white">Add Contact Party</h3>
-                <button onClick={() => setIsPartyModalOpen(false)} className="text-slate-400">✕</button>
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                  {editingParty ? 'Edit Contact Party' : 'Add Contact Party'}
+                </h3>
+                <button onClick={() => setIsPartyModalOpen(false)} className="text-slate-400">
+                  ✕
+                </button>
               </div>
 
-              <form onSubmit={handleCreateParty} className="space-y-4">
+              <form onSubmit={handleSaveParty} className="space-y-4">
                 <FormInput
                   label="Party / Person Name *"
                   required
@@ -425,6 +499,14 @@ export const LendBorrowScreen: React.FC = () => {
                   placeholder="+91 98765 43210"
                 />
 
+                <FormTextarea
+                  label="Notes"
+                  rows={2}
+                  value={partyNotes}
+                  onChange={(e) => setPartyNotes(e.target.value)}
+                  placeholder="Optional context, e.g. how you know them"
+                />
+
                 <div className="flex items-center justify-end gap-2.5 pt-4">
                   <button
                     type="button"
@@ -438,7 +520,13 @@ export const LendBorrowScreen: React.FC = () => {
                     disabled={partySaving}
                     className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
-                    {partySaving ? 'Creating...' : 'Create Party'}
+                    {partySaving
+                      ? editingParty
+                        ? 'Saving...'
+                        : 'Creating...'
+                      : editingParty
+                        ? 'Save Changes'
+                        : 'Create Party'}
                   </button>
                 </div>
               </form>
@@ -459,7 +547,9 @@ export const LendBorrowScreen: React.FC = () => {
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">Record Transaction</h3>
-                <button onClick={() => setIsEntryModalOpen(false)} className="text-slate-400">✕</button>
+                <button onClick={() => setIsEntryModalOpen(false)} className="text-slate-400">
+                  ✕
+                </button>
               </div>
 
               <form onSubmit={handleAddEntry} className="space-y-4">
@@ -507,11 +597,7 @@ export const LendBorrowScreen: React.FC = () => {
                   placeholder="e.g. Dinner split, Emergency cash"
                 />
 
-                <DatePicker
-                  label="Date"
-                  value={entryDate}
-                  onChange={(val) => setEntryDate(val)}
-                />
+                <DatePicker label="Date" value={entryDate} onChange={(val) => setEntryDate(val)} />
 
                 <div className="flex items-center justify-end gap-2.5 pt-4">
                   <button
@@ -547,7 +633,9 @@ export const LendBorrowScreen: React.FC = () => {
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">Record Settlement</h3>
-                <button onClick={() => setIsSettleModalOpen(false)} className="text-slate-400">✕</button>
+                <button onClick={() => setIsSettleModalOpen(false)} className="text-slate-400">
+                  ✕
+                </button>
               </div>
 
               <form onSubmit={handleSettle} className="space-y-4">
@@ -567,6 +655,8 @@ export const LendBorrowScreen: React.FC = () => {
                   onChange={(e) => setSettleNote(e.target.value)}
                   placeholder="e.g. Paid via UPI"
                 />
+
+                <DatePicker label="Settlement Date" value={settleDate} onChange={(val) => setSettleDate(val)} />
 
                 <div className="flex items-center justify-end gap-2.5 pt-4">
                   <button

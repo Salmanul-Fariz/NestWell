@@ -4,6 +4,7 @@ import { useAuth } from '../../lib/auth-context';
 import { useTheme, type Theme } from '../../lib/theme-context';
 import { THEME_CONFIG } from '../../lib/theme-constants';
 import { NestwellLogo } from '../../components/shared/NestwellLogo';
+import { apiErrorMessage } from '../../lib/utils';
 import {
   Lock,
   Mail,
@@ -13,7 +14,7 @@ import {
   Sparkles,
   KeyRound,
   Calendar,
-  CreditCard,
+  DollarSign,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -51,12 +52,7 @@ export const AuthPage: React.FC = () => {
         await register(name, email, password);
       }
     } catch (err: any) {
-      const msg =
-        err.response?.data?.message ||
-        (Array.isArray(err.response?.data?.message)
-          ? err.response?.data?.message.join(', ')
-          : 'Incorrect credentials or connection error. Please try again.');
-      setError(msg);
+      setError(apiErrorMessage(err, 'Incorrect credentials or connection error. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -65,7 +61,7 @@ export const AuthPage: React.FC = () => {
   const featurePills = [
     { icon: KeyRound, title: 'Encrypted Vault', desc: 'Zero-knowledge master key', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
     { icon: Calendar, title: 'Smart Calendar', desc: 'Multi-channel event alerts', color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20' },
-    { icon: CreditCard, title: 'Cashflow & EMI', desc: 'Lend & borrow settlements', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' },
+    { icon: DollarSign, title: 'Cashflow Ledger', desc: 'Income, expenses & settlements', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' },
   ];
 
   return (

@@ -1,4 +1,6 @@
+import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { toConstantCase } from '@nestwell/shared-types';
 
 export class CreatePasswordEntryDto {
   @IsString()
@@ -21,6 +23,9 @@ export class CreatePasswordEntryDto {
   @IsString()
   notes?: string;
 
+  @Transform(({ value }) =>
+    typeof value === 'string' ? toConstantCase(value) || undefined : value,
+  )
   @IsOptional()
   @IsString()
   category?: string;

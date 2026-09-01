@@ -14,7 +14,10 @@ export class UsersService {
     if (existing) {
       throw new ConflictException('User with this email already exists');
     }
-    const createdUser = new this.userModel(data);
+    const createdUser = new this.userModel({
+      ...data,
+      email: data.email.toLowerCase().trim(),
+    });
     return createdUser.save();
   }
 
@@ -27,6 +30,22 @@ export class UsersService {
   }
 
   async updateRefreshTokenHash(userId: string | Types.ObjectId, refreshTokenHash: string | null): Promise<void> {
-    await this.userModel.findByIdAndUpdate(userId, { refreshTokenHash });
+    await this.userModel.findByIdAndUpdate(userId, {
+      refreshTokenHash,
+      previousRefreshTokenHash: null,
+      refreshTokenRotatedAt: null,
+    });
+  }
+
+  async rotateRefreshTokenHash(
+    userId: string | Types.ObjectId,
+    nextHash: string,
+    previousHash: string | null,
+  ): Promise<void> {
+    await this.userModel.findByIdAndUpdate(userId, {
+      refreshTokenHash: nextHash,
+      previousRefreshTokenHash: previousHash,
+      refreshTokenRotatedAt: new Date(),
+    });
   }
 }
