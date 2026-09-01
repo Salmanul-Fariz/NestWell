@@ -1,0 +1,61 @@
+services:
+  # 1. MongoDB with Replica Set (required for mongoose transactions)
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "try { rs.status().ok } catch (e) { rs.initiate().ok }"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+
+  # 3. NestWell Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongo:27017/nestwell?replicaSet=rs0&directConnection=true
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=nestwell_super_secret_jwt_access_key_2026
+      - JWT_REFRESH_SECRET=nestwell_super_secret_jwt_refresh_key_2026
+      - CALLMEBOT_API_KEY=8005945
+      - WEB_PUSH_VAPID_PUBLIC=BASuYe4GEYBbx0TVC17DPFVB-BVuX4e-fNRiS3zRiosoVBsIunarYwRlhkIJbmrBDXCDPVmRShfhB-OLvzlR4lc
+      - WEB_PUSH_VAPID_PRIVATE=HkUZxWY0ONUsnShFCoF-C2aHcGl6mysZFc0fj4-jr3c
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
+  # 4. NestWell Frontend (Nginx SPA + Reverse Proxy)
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  mongo_data:
+  redis_data:
