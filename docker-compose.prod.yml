@@ -1,3 +1,10 @@
+# Production stack: Mongo + Redis + API + Nginx UI.
+# First build on a slow network still has to download packages once.
+# Rebuilds reuse the pnpm store cache (needs BuildKit).
+# If you see "Bake, but buildx isn't installed":
+#   sudo apt-get install -y docker-buildx-plugin
+#   export DOCKER_BUILDKIT=1
+#   export COMPOSE_BAKE=false
 services:
   # 1. MongoDB with Replica Set (required for mongoose transactions)
   mongo:

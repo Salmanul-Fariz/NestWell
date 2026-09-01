@@ -1,52 +1,40 @@
-# --- Build Stage ---
+# syntax=docker/dockerfile:1
+
+# Install backend (+ workspace libs) once. The runner copies that output —
+# it does not talk to the npm registry again.
 FROM node:22-alpine AS builder
 
 WORKDIR /app
+ENV CI=true
+ENV PNPM_HOME=/pnpm
+ENV PATH="${PNPM_HOME}:${PATH}"
 
-# Enable pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
-# Copy root workspace files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-
-# Copy packages and app package definitions
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages ./packages
 COPY apps/backend/package.json ./apps/backend/
-COPY apps/frontend/package.json ./apps/frontend/
 
-# Install all dependencies across monorepo
-RUN pnpm install --frozen-lockfile
+# Cache the pnpm store across builds. Only backend (and its deps) are installed —
+# not the Vite/React tree.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter backend... --store-dir /pnpm/store
 
-# Copy source files
 COPY apps/backend ./apps/backend
 
-# Build shared types & backend
-RUN pnpm --filter @nestwell/shared-types build 2>/dev/null || true
-RUN pnpm --filter backend build
+RUN pnpm --filter @nestwell/shared-types build || true \
+    && pnpm --filter backend build \
+    && pnpm --filter backend deploy --prod --legacy /out
 
-# --- Production Runner Stage ---
 FROM node:22-alpine AS runner
 
 WORKDIR /app
-
 ENV NODE_ENV=production
 ENV PORT=3000
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY --from=builder --chown=node:node /out ./
+COPY --from=builder --chown=node:node /app/apps/backend/dist ./dist
 
-# Copy root workspace files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages ./packages
-COPY apps/backend/package.json ./apps/backend/
-
-# Install only production dependencies
-RUN pnpm install --prod --frozen-lockfile
-
-# Copy built dist from builder
-COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
-
-WORKDIR /app/apps/backend
-
+USER node
 EXPOSE 3000
-
 CMD ["node", "dist/main"]
