@@ -1,79 +1,39 @@
-# Production stack: Mongo + Redis + API + Nginx UI.
-# First build on a slow network still has to download packages once.
-# Rebuilds reuse the pnpm store cache (needs BuildKit).
-# If you see "Bake, but buildx isn't installed":
-#   sudo apt-get install -y docker-buildx-plugin
-#   export DOCKER_BUILDKIT=1
-#   export COMPOSE_BAKE=false
 services:
-  # 1. MongoDB with Replica Set (required for mongoose transactions)
   mongo:
     image: mongo:7
     command: ["--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "try { rs.status().ok } catch (e) { rs.initiate().ok }"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # 2. Redis Cache
   redis:
     image: redis:7-alpine
-    ports:
-      - "6380:6379"
     volumes:
       - redis_data:/data
 
-  # 3. NestWell Backend API
-  backend:
-    build:
-      context: .
-      dockerfile: apps/backend/Dockerfile
+  app:
+    build: .
     ports:
-      - "3000:3000"
+      - "80:3000"
     environment:
-      - PORT=3000
-      - NODE_ENV=production
-      - MONGO_URI=mongodb://mongo:27017/nestwell?replicaSet=rs0&directConnection=true
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=nestwell_super_secret_jwt_access_key_2026
-      - JWT_REFRESH_SECRET=nestwell_super_secret_jwt_refresh_key_2026
-      - CALLMEBOT_API_KEY=8005945
-      - WEB_PUSH_VAPID_PUBLIC=BASuYe4GEYBbx0TVC17DPFVB-BVuX4e-fNRiS3zRiosoVBsIunarYwRlhkIJbmrBDXCDPVmRShfhB-OLvzlR4lc
-      - WEB_PUSH_VAPID_PRIVATE=HkUZxWY0ONUsnShFCoF-C2aHcGl6mysZFc0fj4-jr3c
+      PORT: "3000"
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongo:27017/nestwell?replicaSet=rs0&directConnection=true
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: nestwell_super_secret_jwt_access_key_2026
+      JWT_REFRESH_SECRET: nestwell_super_secret_jwt_refresh_key_2026
+      CALLMEBOT_API_KEY: "8005945"
+      WEB_PUSH_VAPID_PUBLIC: BASuYe4GEYBbx0TVC17DPFVB-BVuX4e-fNRiS3zRiosoVBsIunarYwRlhkIJbmrBDXCDPVmRShfhB-OLvzlR4lc
+      WEB_PUSH_VAPID_PRIVATE: HkUZxWY0ONUsnShFCoF-C2aHcGl6mysZFc0fj4-jr3c
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_started
-    restart: always
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 20s
-
-  # 4. NestWell Frontend (Nginx SPA + Reverse Proxy)
-  frontend:
-    build:
-      context: .
-      dockerfile: apps/frontend/Dockerfile
-    ports:
-      - "80:80"
-    depends_on:
-      backend:
-        condition: service_healthy
     restart: always
 
 volumes:
