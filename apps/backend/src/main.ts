@@ -1,13 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
-import * as cookieParserNamespace from 'cookie-parser';
-import cookieParserDefault from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
-
-const cookieParser = (cookieParserDefault || cookieParserNamespace) as unknown as typeof cookieParserDefault;
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -15,7 +12,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: 'health', method: RequestMethod.GET }],
   });
-  app.use((typeof cookieParser === 'function' ? cookieParser : (cookieParser as any).default)());
+  app.use(cookieParser());
 
   const extraOrigins = (process.env.FRONTEND_ORIGIN ?? '')
     .split(',')
@@ -49,8 +46,13 @@ async function bootstrap() {
     });
   }
 
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-  console.log(`Application is running on: http://localhost:${port}`);
+  const port = Number(process.env.PORT ?? 3000);
+  // Bind IPv4 inside Docker so Nginx can reach this process (avoids IPv6-only listen).
+  await app.listen(port, '0.0.0.0');
+  console.log(`Application is running on port ${port}`);
 }
-bootstrap();
+
+bootstrap().catch((err) => {
+  console.error('Failed to start NestWell backend', err);
+  process.exit(1);
+});
