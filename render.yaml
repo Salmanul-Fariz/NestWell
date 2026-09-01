@@ -1,0 +1,42 @@
+services:
+  # 1. NestWell Backend API Service
+  - type: web
+    name: nestwell-backend
+    runtime: docker
+    dockerfilePath: apps/backend/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: REDIS_URL
+        sync: false
+      - key: CALLMEBOT_API_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_PUBLIC
+        sync: false
+      - key: WEB_PUSH_VAPID_PRIVATE
+        sync: false
+
+  # 2. NestWell Frontend Static Site
+  - type: web
+    name: nestwell-frontend
+    runtime: static
+    buildCommand: pnpm --filter frontend build
+    staticPublishPath: apps/frontend/dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22.0.0
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
