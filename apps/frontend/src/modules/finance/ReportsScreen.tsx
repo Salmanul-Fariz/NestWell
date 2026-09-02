@@ -271,25 +271,6 @@ export const ReportsScreen: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-
-            {viewMode === 'monthly' && (
-            <button
-              onClick={async () => {
-                try {
-                  const res = await api.get('/finance/reports/whatsapp-summary', {
-                    params: { month: selectedMonth, year: selectedYear },
-                  });
-                  alert(res.data.message || 'Monthly overview sent to WhatsApp.');
-                } catch (err: any) {
-                  alert(apiErrorMessage(err, 'Failed to send WhatsApp monthly overview'));
-                }
-              }}
-              className="h-9 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Send this month's overview to WhatsApp"
-            >
-              <span>WhatsApp Overview</span>
-            </button>
-            )}
           </div>
         </div>
       </div>
