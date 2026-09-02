@@ -295,23 +295,6 @@ export const EventsScreen: React.FC = () => {
           </div>
 
           <button
-            onClick={async () => {
-              try {
-                const res = await api.post<{ success: boolean; message: string }>('/events/test-reminders');
-                setFeedback(res.data.message || 'Reminder alerts evaluated and dispatched.');
-                setTimeout(() => setFeedback(null), 5000);
-              } catch (err: any) {
-                setError(apiErrorMessage(err, 'Failed to trigger test reminders'));
-              }
-            }}
-            className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Test reminder notifications immediately"
-          >
-            <Bell className="w-3.5 h-3.5" />
-            <span>Test Alerts</span>
-          </button>
-
-          <button
             onClick={() => openModal()}
             className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all cursor-pointer"
           >

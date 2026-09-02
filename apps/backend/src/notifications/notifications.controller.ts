@@ -35,16 +35,4 @@ export class NotificationsController {
   unsubscribe(@CurrentUser('userId') userId: string, @Body() dto: UnsubscribePushDto) {
     return this.notificationsService.unsubscribePush(userId, dto);
   }
-
-  @Post('test/push')
-  @HttpCode(HttpStatus.OK)
-  testPush(@CurrentUser('userId') userId: string) {
-    return this.notificationsService.sendTestPush(userId);
-  }
-
-  @Post('test/whatsapp')
-  @HttpCode(HttpStatus.OK)
-  testWhatsapp(@CurrentUser('userId') userId: string) {
-    return this.notificationsService.sendTestWhatsapp(userId);
-  }
 }

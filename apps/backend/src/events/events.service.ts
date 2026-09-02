@@ -4,14 +4,12 @@ import { Model, Types } from 'mongoose';
 import { Event, EventDocument } from './schemas/event.schema';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
-import { EventReminderSchedulerService } from './event-reminder-scheduler.service';
 
 @Injectable()
 export class EventsService {
   constructor(
     @InjectModel(Event.name)
     private readonly eventModel: Model<EventDocument>,
-    private readonly reminderScheduler: EventReminderSchedulerService,
   ) {}
 
   async findAll(userId: string, from?: string, to?: string): Promise<EventDocument[]> {
@@ -106,20 +104,5 @@ export class EventsService {
       throw new NotFoundException('Event not found');
     }
     return { success: true };
-  }
-
-  async triggerTestReminders(userId: string): Promise<{ success: boolean; message: string; evaluatedCount: number }> {
-    const events = await this.eventModel.find({ userId: new Types.ObjectId(userId) });
-    // Reset notifiedOccurrences on events for this test if requested so alerts can re-fire
-    for (const ev of events) {
-      ev.notifiedOccurrences = [];
-      await ev.save();
-    }
-    await this.reminderScheduler.processEventReminders(new Date());
-    return {
-      success: true,
-      message: `Evaluated ${events.length} event(s) and dispatched pending alerts to configured devices.`,
-      evaluatedCount: events.length,
-    };
   }
 }

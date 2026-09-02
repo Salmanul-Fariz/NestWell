@@ -162,19 +162,4 @@ export class NotificationsService {
 
     return { ok: result.ok, message: result.detail };
   }
-
-  async sendTestPush(userId: string) {
-    return this.sendPush(userId, {
-      title: 'NestWell test notification',
-      body: 'Web push is working. You will get reminders here.',
-      url: '/',
-    });
-  }
-
-  async sendTestWhatsapp(userId: string) {
-    return this.sendWhatsapp(
-      userId,
-      'NestWell test message: your WhatsApp alerts are working.',
-    );
-  }
 }

@@ -82,6 +82,7 @@ export class ReportsService {
     }
 
     // Party Cash Impact: (Borrow In - Lend Out) + (Repayments In - Repayments Out)
+    // Equivalent to all BORROW amounts minus all LEND amounts (settlements included).
     const partyCashFlow =
       totalBorrowReceived - totalLendGiven + totalRepaymentsReceived - totalRepaymentsPaid;
 
@@ -96,6 +97,29 @@ export class ReportsService {
     };
   }
 
+  /** Cash from ledger entries in a period. Every LEND is cash out; every BORROW is cash in (settlements too). */
+  private partyCashFlowInRange(ledgers: LendBorrowDocument[], range: DateRange) {
+    const start = range.start.getTime();
+    const end = range.end.getTime();
+    let lendOut = 0;
+    let borrowIn = 0;
+
+    for (const ledger of ledgers) {
+      for (const entry of ledger.entries || []) {
+        const t = new Date(entry.date).getTime();
+        if (t < start || t > end) continue;
+        if (entry.type === 'LEND') lendOut += entry.amount;
+        else if (entry.type === 'BORROW') borrowIn += entry.amount;
+      }
+    }
+
+    return {
+      periodLendOut: lendOut,
+      periodBorrowIn: borrowIn,
+      periodPartyCashFlow: borrowIn - lendOut,
+    };
+  }
+
   async getMonthlyReport(userId: string, month: number, year: number) {
     const range = utcMonthRange(year, month);
     const userObjectId = new Types.ObjectId(userId);
@@ -104,8 +128,6 @@ export class ReportsService {
     const [
       expenses,
       income,
-      allTimeIncomeAgg,
-      allTimeExpenseAgg,
       expensesByCategory,
       incomeBySource,
       weeklyExpenses,
@@ -120,14 +142,6 @@ export class ReportsService {
       this.incomeModel.aggregate([
         { $match: dateMatch },
         { $group: { _id: null, totalIncome: { $sum: '$amount' }, count: { $sum: 1 } } },
-      ]),
-      this.incomeModel.aggregate([
-        { $match: { userId: userObjectId } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
-      this.expenseModel.aggregate([
-        { $match: { userId: userObjectId } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
       ]),
       this.expenseModel.aggregate([
         { $match: dateMatch },
@@ -159,8 +173,6 @@ export class ReportsService {
 
     const totalExpense = expenses[0]?.totalExpense || 0;
     const totalIncome = income[0]?.totalIncome || 0;
-    const allTimeIncome = allTimeIncomeAgg[0]?.total || 0;
-    const allTimeExpense = allTimeExpenseAgg[0]?.total || 0;
 
     const {
       netLendBalance,
@@ -169,17 +181,15 @@ export class ReportsService {
       totalBorrowReceived,
       totalRepaymentsReceived,
       totalRepaymentsPaid,
-      partyCashFlow,
     } = this.computePartyBalances(allLedgers);
 
-    // Core Metrics according to Financial Accounting Principles:
-    // 1. Total Cash Balance = (All-Time Income - All-Time Expenses) + (Borrow In - Lend Out) + (Repayments In - Repayments Out)
-    const totalCashBalance = allTimeIncome - allTimeExpense + partyCashFlow;
+    const { periodLendOut, periodBorrowIn, periodPartyCashFlow } = this.partyCashFlowInRange(
+      allLedgers,
+      range,
+    );
 
-    // 2. Month's Savings = Current Month Income - Current Month Expenses
-    const monthSavings = totalIncome - totalExpense;
-
-    // 3. Net Savings (Liquidity + Receivables - Payables Net Worth)
+    // Period savings = income − expense ± this month's lend/borrow/settlements
+    const monthSavings = totalIncome - totalExpense + periodPartyCashFlow;
     const netSavings = monthSavings;
 
     const weeks = [1, 2, 3, 4].map((week) => {
@@ -199,7 +209,7 @@ export class ReportsService {
         borrow,
         transactions: lend + borrow,
         outflow: expense,
-        net: inc - expense,
+        net: inc - expense + borrow - lend,
       };
     });
 
@@ -208,7 +218,6 @@ export class ReportsService {
       year,
       totalIncome,
       totalExpense,
-      totalCashBalance,
       monthSavings,
       netLendBalance,
       netBorrowBalance,
@@ -216,6 +225,9 @@ export class ReportsService {
       totalBorrowReceived,
       totalRepaymentsReceived,
       totalRepaymentsPaid,
+      periodLendOut,
+      periodBorrowIn,
+      periodPartyCashFlow,
       toReceive: netLendBalance,
       toPay: netBorrowBalance,
       netSavings,
@@ -235,8 +247,6 @@ export class ReportsService {
       monthlyIncome,
       monthlyParty,
       expensesByCategory,
-      allTimeIncomeAgg,
-      allTimeExpenseAgg,
       allLedgers,
     ] = await Promise.all([
       this.expenseModel.aggregate([
@@ -263,14 +273,6 @@ export class ReportsService {
         { $match: dateMatch },
         { $group: { _id: '$category', totalAmount: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
-      this.incomeModel.aggregate([
-        { $match: { userId: userObjectId } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
-      this.expenseModel.aggregate([
-        { $match: { userId: userObjectId } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
       this.lendBorrowModel.find({ userId: userObjectId }).exec(),
     ]);
 
@@ -281,12 +283,7 @@ export class ReportsService {
       totalBorrowReceived,
       totalRepaymentsReceived,
       totalRepaymentsPaid,
-      partyCashFlow,
     } = this.computePartyBalances(allLedgers);
-
-    const allTimeIncome = allTimeIncomeAgg[0]?.total || 0;
-    const allTimeExpense = allTimeExpenseAgg[0]?.total || 0;
-    const totalCashBalance = allTimeIncome - allTimeExpense + partyCashFlow;
 
     const monthsData = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
@@ -305,28 +302,35 @@ export class ReportsService {
         borrow,
         transactions: lend + borrow,
         outflow: expense,
-        netSavings: income - expense,
+        netSavings: income - expense + borrow - lend,
       };
     });
 
     const totalIncome = monthsData.reduce((acc, curr) => acc + curr.income, 0);
     const totalExpense = monthsData.reduce((acc, curr) => acc + curr.expense, 0);
+    const { periodLendOut, periodBorrowIn, periodPartyCashFlow } = this.partyCashFlowInRange(
+      allLedgers,
+      range,
+    );
+    const yearSavings = totalIncome - totalExpense + periodPartyCashFlow;
 
     return {
       year,
       totalIncome,
       totalExpense,
-      totalCashBalance,
-      monthSavings: totalIncome - totalExpense,
+      monthSavings: yearSavings,
       netLendBalance,
       netBorrowBalance,
       totalLendGiven,
       totalBorrowReceived,
       totalRepaymentsReceived,
       totalRepaymentsPaid,
+      periodLendOut,
+      periodBorrowIn,
+      periodPartyCashFlow,
       toReceive: netLendBalance,
       toPay: netBorrowBalance,
-      netSavings: totalIncome - totalExpense,
+      netSavings: yearSavings,
       months: monthsData,
       expensesByCategory,
     };
@@ -344,10 +348,10 @@ export class ReportsService {
       `${val < 0 ? '-₹' : '₹'}${Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
     let msg = `📊 *NestWell Financial Overview — ${monthName} ${year}*\n\n`;
-    msg += `💵 *Total Cash Balance:* ${fmt(data.totalCashBalance)}\n`;
     msg += `📈 *Month Savings:* ${fmt(data.monthSavings)}\n`;
     msg += `🟢 *Total Income:* ${fmt(data.totalIncome)}\n`;
-    msg += `🔴 *Total Expenses:* ${fmt(data.totalExpense)}\n\n`;
+    msg += `🔴 *Total Expenses:* ${fmt(data.totalExpense)}\n`;
+    msg += `↔️ *Party cash (month):* ${fmt(data.periodPartyCashFlow)}\n\n`;
     msg += `👥 *Contacts Standing:*\n`;
     msg += `• *To Receive (Lent):* ${fmt(data.netLendBalance)}\n`;
     msg += `• *To Pay (Borrowed):* ${fmt(data.netBorrowBalance)}\n\n`;

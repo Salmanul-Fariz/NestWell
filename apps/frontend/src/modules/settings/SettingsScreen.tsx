@@ -15,7 +15,6 @@ import {
   Check,
   Loader2,
   MessageCircle,
-  Send,
   Smartphone,
   TriangleAlert,
 } from 'lucide-react';
@@ -97,7 +96,7 @@ export const SettingsScreen: React.FC = () => {
         setCurrentEndpoint(await getCurrentEndpoint());
         setPushFeedback({
           ok: true,
-          text: 'This device is registered. Send a test to confirm delivery.',
+          text: 'This device is registered. Event reminders will arrive on this browser.',
         });
       }
     } catch (err) {
@@ -105,28 +104,6 @@ export const SettingsScreen: React.FC = () => {
         ok: false,
         text: err instanceof Error ? err.message : apiErrorMessage(err, 'Could not update push.'),
       });
-    } finally {
-      setPushBusy(false);
-    }
-  };
-
-  const handleTestPush = async () => {
-    if (!settings?.devices.length) {
-      setPushFeedback({
-        ok: false,
-        text: 'No device is registered yet. Click "Enable on this device" first.',
-      });
-      return;
-    }
-
-    setPushBusy(true);
-    setPushFeedback(null);
-    try {
-      const res = await api.post<{ ok: boolean; message: string }>('/notifications/test/push');
-      setPushFeedback({ ok: res.data.ok, text: res.data.message });
-      await loadSettings();
-    } catch (err) {
-      setPushFeedback({ ok: false, text: apiErrorMessage(err, 'Test notification failed.') });
     } finally {
       setPushBusy(false);
     }
@@ -156,30 +133,6 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleTestWhatsapp = async () => {
-    if (!phone.trim()) {
-      setWhatsappFeedback({ ok: false, text: 'Enter your WhatsApp number first.' });
-      return;
-    }
-
-    setWhatsappBusy(true);
-    setWhatsappFeedback(null);
-    try {
-      // Persist anything typed but not yet saved, so one click is enough to test.
-      if (phone.trim() !== settings?.whatsappPhone || apiKey.trim()) {
-        await saveWhatsapp();
-      }
-      const res = await api.post<{ ok: boolean; message: string }>(
-        '/notifications/test/whatsapp',
-      );
-      setWhatsappFeedback({ ok: res.data.ok, text: res.data.message });
-    } catch (err) {
-      setWhatsappFeedback({ ok: false, text: apiErrorMessage(err, 'Test message failed.') });
-    } finally {
-      setWhatsappBusy(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
@@ -197,7 +150,7 @@ export const SettingsScreen: React.FC = () => {
           Notifications
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Choose how NestWell reaches you, and send a test to confirm it works
+          Choose how NestWell sends event reminders and the monthly overview
         </p>
       </div>
 
@@ -213,7 +166,7 @@ export const SettingsScreen: React.FC = () => {
                 Browser push notifications
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Delivered to this browser, even when the tab is closed.
+                Delivered for event reminders, even when this tab is closed.
               </p>
             </div>
           </div>
@@ -305,15 +258,6 @@ export const SettingsScreen: React.FC = () => {
             )}
             <span>{thisDeviceRegistered ? 'Turn off on this device' : 'Enable on this device'}</span>
           </button>
-
-          <button
-            onClick={handleTestPush}
-            disabled={pushBusy}
-            className="px-4 py-2.5 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Send test notification</span>
-          </button>
         </div>
 
         <FeedbackNote feedback={pushFeedback} />
@@ -331,7 +275,7 @@ export const SettingsScreen: React.FC = () => {
                 WhatsApp alerts
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Sent through CallMeBot to your own number.
+                Used for event reminders and the monthly financial overview.
               </p>
             </div>
           </div>
@@ -387,15 +331,6 @@ export const SettingsScreen: React.FC = () => {
             className="px-4 py-2.5 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {settings?.whatsappEnabled ? 'Turn off alerts' : 'Turn on alerts'}
-          </button>
-
-          <button
-            onClick={handleTestWhatsapp}
-            disabled={whatsappBusy || !phone.trim()}
-            className="px-4 py-2.5 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Send test message</span>
           </button>
         </div>
 

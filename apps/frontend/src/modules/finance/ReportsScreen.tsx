@@ -28,7 +28,6 @@ import {
 import {
   TrendingUp,
   TrendingDown,
-  DollarSign,
   PieChart as PieIcon,
   Users,
   Loader2,
@@ -71,7 +70,6 @@ const money = (value: number) =>
 interface ReportPayload {
   totalIncome: number;
   totalExpense: number;
-  totalCashBalance: number;
   monthSavings: number;
   netLendBalance: number;
   netBorrowBalance: number;
@@ -79,6 +77,9 @@ interface ReportPayload {
   totalBorrowReceived?: number;
   totalRepaymentsReceived?: number;
   totalRepaymentsPaid?: number;
+  periodLendOut?: number;
+  periodBorrowIn?: number;
+  periodPartyCashFlow?: number;
   netSavings: number;
   expensesByCategory?: Array<{ _id: string; totalAmount: number }>;
   weeks?: Array<{
@@ -139,8 +140,9 @@ export const ReportsScreen: React.FC = () => {
   const report = viewMode === 'monthly' ? monthlyReport : yearlyReport;
   const totalIncome = report?.totalIncome || 0;
   const totalExpense = report?.totalExpense || 0;
-  const totalCashBalance = report?.totalCashBalance || 0;
-  const monthSavings = report?.monthSavings ?? totalIncome - totalExpense;
+  const periodPartyCashFlow = report?.periodPartyCashFlow || 0;
+  const monthSavings =
+    report?.monthSavings ?? totalIncome - totalExpense + periodPartyCashFlow;
   const netLendBalance = report?.netLendBalance || 0;
   const netBorrowBalance = report?.netBorrowBalance || 0;
   const savingsRate = totalIncome > 0 ? Math.round((monthSavings / totalIncome) * 100) : 0;
@@ -157,14 +159,14 @@ export const ReportsScreen: React.FC = () => {
         color: CATEGORY_COLORS[catKey] || '#6366F1',
       };
     });
-    if (netLendBalance > 0) {
-      slices.push({ name: 'Net Lend (Owed to you)', value: netLendBalance, color: CATEGORY_COLORS.lend });
+    if ((report?.periodLendOut || 0) > 0) {
+      slices.push({ name: 'Lent out', value: report!.periodLendOut!, color: CATEGORY_COLORS.lend });
     }
-    if (netBorrowBalance > 0) {
-      slices.push({ name: 'Net Borrow (You owe)', value: netBorrowBalance, color: CATEGORY_COLORS.borrow });
+    if ((report?.periodBorrowIn || 0) > 0) {
+      slices.push({ name: 'Borrowed in', value: report!.periodBorrowIn!, color: CATEGORY_COLORS.borrow });
     }
     return slices;
-  }, [report, netLendBalance, netBorrowBalance]);
+  }, [report]);
 
   const yearlyChartData = useMemo(() => {
     if (!yearlyReport?.months) return [];
@@ -200,10 +202,10 @@ export const ReportsScreen: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <PieIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-            Financial Ledger Summary
+            Dashboard
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Complete snapshot of your liquidity, period savings, and peer-to-peer standings
+            Savings, income, expenses, and outstanding lend/borrow for {periodLabel}
           </p>
         </div>
 
@@ -270,49 +272,31 @@ export const ReportsScreen: React.FC = () => {
               </Select>
             </div>
 
+            {viewMode === 'monthly' && (
             <button
               onClick={async () => {
                 try {
                   const res = await api.get('/finance/reports/whatsapp-summary', {
                     params: { month: selectedMonth, year: selectedYear },
                   });
-                  alert(res.data.message || 'Financial overview sent to WhatsApp!');
+                  alert(res.data.message || 'Monthly overview sent to WhatsApp.');
                 } catch (err: any) {
-                  alert(apiErrorMessage(err, 'Failed to send WhatsApp financial overview'));
+                  alert(apiErrorMessage(err, 'Failed to send WhatsApp monthly overview'));
                 }
               }}
               className="h-9 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Send minimal monthly financial summary to WhatsApp"
+              title="Send this month's overview to WhatsApp"
             >
               <span>WhatsApp Overview</span>
             </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Core Summary Metrics (4 Cards) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* 1. Total Cash Balance */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm relative overflow-hidden"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Cash Balance</span>
-            <div className={`w-8 h-8 rounded-lg ${totalCashBalance >= 0 ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'} flex items-center justify-center`}>
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <h3 className={`text-2xl font-extrabold font-mono ${totalCashBalance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-600 dark:text-rose-400'}`}>
-            {money(totalCashBalance)}
-          </h3>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Actual liquid cash available on hand
-          </p>
-        </motion.div>
-
-        {/* 2. This Month's Savings */}
+      {/* Core Summary Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* This Month's Savings */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -321,7 +305,7 @@ export const ReportsScreen: React.FC = () => {
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              {viewMode === 'monthly' ? "This Month's Savings" : 'Yearly Savings'}
+              {viewMode === 'monthly' ? `${FULL_MONTHS[selectedMonth - 1]} savings` : `${selectedYear} savings`}
             </span>
             <div className={`w-8 h-8 rounded-lg ${monthSavings >= 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'} flex items-center justify-center`}>
               {monthSavings >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
@@ -331,8 +315,8 @@ export const ReportsScreen: React.FC = () => {
             {money(monthSavings)}
           </h3>
           <p className="text-[11px] text-slate-400 mt-1">
-            {viewMode === 'monthly' ? 'Income − Expenses in current month' : 'Income − Expenses in year'}
-            {totalIncome > 0 ? ` · ${savingsRate}%` : ''}
+            Income − expenses, plus lend, borrow, and settlements
+            {totalIncome > 0 ? ` · ${savingsRate}% of income` : ''}
           </p>
         </motion.div>
 
@@ -344,7 +328,7 @@ export const ReportsScreen: React.FC = () => {
           className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Net Lend Balance</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Owed to you</span>
             <div className="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center font-bold">
               <Users className="w-4 h-4" />
             </div>
@@ -353,7 +337,7 @@ export const ReportsScreen: React.FC = () => {
             {money(netLendBalance)}
           </h3>
           <p className="text-[11px] text-slate-400 mt-1">
-            Total money owed to you by all parties
+            Outstanding lend balance (all parties)
           </p>
         </motion.div>
 
@@ -365,7 +349,7 @@ export const ReportsScreen: React.FC = () => {
           className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Net Borrow Balance</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">You owe</span>
             <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
               <ArrowLeftRight className="w-4 h-4" />
             </div>
@@ -374,7 +358,7 @@ export const ReportsScreen: React.FC = () => {
             {money(netBorrowBalance)}
           </h3>
           <p className="text-[11px] text-slate-400 mt-1">
-            Total money you owe to all parties
+            Outstanding borrow balance (all parties)
           </p>
         </motion.div>
       </div>
@@ -419,17 +403,17 @@ export const ReportsScreen: React.FC = () => {
       {loading ? (
         <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
           <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
-          <span className="text-xs font-medium">Aggregating visual analytics...</span>
+          <span className="text-xs font-medium">Loading dashboard...</span>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
             <div className="mb-4">
               <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                {viewMode === 'monthly' ? 'Monthly cashflow' : `${selectedYear} yearly cashflow`}
+                {viewMode === 'monthly' ? `${periodLabel} cashflow` : `${selectedYear} cashflow`}
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Income vs expense vs party transactions for the selected period
+                Income, expenses, money lent out, and money borrowed in
               </p>
             </div>
 
@@ -471,8 +455,8 @@ export const ReportsScreen: React.FC = () => {
                     <Legend wrapperStyle={{ fontSize: '11px' }} />
                     <Area type="monotone" dataKey="income" name="Income" stroke="#10B981" strokeWidth={2.5} fillOpacity={1} fill="url(#incomeGrad)" />
                     <Area type="monotone" dataKey="expense" name="Expense" stroke="#F43F5E" strokeWidth={2.5} fillOpacity={1} fill="url(#expenseGrad)" />
-                    <Area type="monotone" dataKey="lend" name="You Lent" stroke="#0EA5E9" strokeWidth={2.5} fillOpacity={1} fill="url(#lendGrad)" />
-                    <Area type="monotone" dataKey="borrow" name="You Borrowed" stroke="#F97316" strokeWidth={2.5} fillOpacity={1} fill="url(#borrowGrad)" />
+                    <Area type="monotone" dataKey="lend" name="Lent out" stroke="#0EA5E9" strokeWidth={2.5} fillOpacity={1} fill="url(#lendGrad)" />
+                    <Area type="monotone" dataKey="borrow" name="Borrowed in" stroke="#F97316" strokeWidth={2.5} fillOpacity={1} fill="url(#borrowGrad)" />
                   </AreaChart>
                 ) : (
                   <BarChart data={yearlyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -492,8 +476,8 @@ export const ReportsScreen: React.FC = () => {
                     <Legend wrapperStyle={{ fontSize: '11px' }} />
                     <Bar dataKey="income" name="Income" fill="#10B981" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="expense" name="Expense" fill="#F43F5E" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="lend" name="You Lent" fill="#0EA5E9" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="borrow" name="You Borrowed" fill="#F97316" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="lend" name="Lent out" fill="#0EA5E9" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="borrow" name="Borrowed in" fill="#F97316" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 )}
               </ResponsiveContainer>
@@ -502,15 +486,15 @@ export const ReportsScreen: React.FC = () => {
 
           <div className="lg:col-span-5 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
             <div>
-              <h4 className="font-bold text-base text-slate-900 dark:text-white">Outflow distribution</h4>
+              <h4 className="font-bold text-base text-slate-900 dark:text-white">Spending & party cash</h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Expenses plus lent and borrowed amounts in {periodLabel}
+                Expense categories plus lend and borrow in {periodLabel}
               </p>
             </div>
 
             {pieData.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-xs italic">
-                No expense or party transactions recorded for this period.
+                No expenses, lend, or borrow recorded for this period.
               </div>
             ) : (
               <div className="h-[240px] w-full my-auto">
