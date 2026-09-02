@@ -13,19 +13,15 @@ async function bootstrap() {
     exclude: [{ path: 'health', method: RequestMethod.GET }],
   });
   app.use(cookieParser());
+  app.set('trust proxy', 1);
 
-  const extraOrigins = (process.env.FRONTEND_ORIGIN ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
+  const corsOrigin = (process.env.CORS_ORIGIN ?? '*').trim();
+  // `origin: '*'` cannot be used with credentials. Reflect the request Origin instead.
   app.enableCors({
-    origin: [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      ...extraOrigins,
-    ],
+    origin: corsOrigin === '*' ? true : corsOrigin.split(',').map((value) => value.trim()).filter(Boolean),
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
   app.useGlobalPipes(
     new ValidationPipe({
