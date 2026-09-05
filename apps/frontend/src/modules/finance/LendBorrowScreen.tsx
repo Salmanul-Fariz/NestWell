@@ -55,7 +55,7 @@ export const LendBorrowScreen: React.FC = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
-  const [partyFilter, setPartyFilter] = useState<PartyFilter>("all");
+  const [partyFilter, setPartyFilter] = useState<PartyFilter>("unsettled");
 
   const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
   const [editingParty, setEditingParty] = useState<Party | null>(null);
@@ -298,8 +298,8 @@ export const LendBorrowScreen: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:min-h-0 lg:flex lg:flex-col">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start lg:h-[calc(100vh-13rem)] lg:overflow-hidden">
+          <div className="lg:col-span-4 lg:h-full lg:min-h-0 lg:flex lg:flex-col">
             <div className="flex items-center justify-between gap-3 px-1 mb-3 shrink-0">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
                 Parties ({filteredLedgers.length})
@@ -408,9 +408,9 @@ export const LendBorrowScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-8 lg:h-full lg:min-h-0">
             {activeLedger ? (
-              <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6">
+              <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6 lg:h-full lg:overflow-y-auto">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800">
                   <div>
                     <span className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
