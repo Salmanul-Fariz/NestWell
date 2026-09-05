@@ -8,10 +8,8 @@ import { apiErrorMessage } from '../../lib/utils';
 import {
   Lock,
   Mail,
-  User as UserIcon,
   ArrowRight,
   Loader2,
-  Sparkles,
   KeyRound,
   Calendar,
   DollarSign,
@@ -24,15 +22,13 @@ import {
 } from 'lucide-react';
 
 export const AuthPage: React.FC = () => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { login, register } = useAuth();
+  const { login } = useAuth();
   const { theme, setTheme } = useTheme();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,16 +37,7 @@ export const AuthPage: React.FC = () => {
     setSubmitting(true);
 
     try {
-      if (isLogin) {
-        await login(email, password);
-      } else {
-        if (!name.trim()) {
-          setError('Please enter your full name');
-          setSubmitting(false);
-          return;
-        }
-        await register(name, email, password);
-      }
+      await login(email, password);
     } catch (err: any) {
       setError(apiErrorMessage(err, 'Incorrect credentials or connection error. Please try again.'));
     } finally {
@@ -164,51 +151,8 @@ export const AuthPage: React.FC = () => {
               </span>
             </div>
 
-            {/* Tab switch */}
-            <div className="relative bg-slate-100 dark:bg-slate-950/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 mb-6 flex">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLogin(true);
-                  setError(null);
-                }}
-                className={`relative flex-1 py-2.5 text-xs font-semibold rounded-xl transition-colors duration-200 z-10 flex items-center justify-center gap-1.5 ${
-                  isLogin ? 'text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                }`}
-              >
-                {isLogin && (
-                  <motion.div
-                    layoutId="authTab"
-                    className="absolute inset-0 bg-indigo-600 rounded-xl shadow-md shadow-indigo-500/30"
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5" /> Sign In
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLogin(false);
-                  setError(null);
-                }}
-                className={`relative flex-1 py-2.5 text-xs font-semibold rounded-xl transition-colors duration-200 z-10 flex items-center justify-center gap-1.5 ${
-                  !isLogin ? 'text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                }`}
-              >
-                {!isLogin && (
-                  <motion.div
-                    layoutId="authTab"
-                    className="absolute inset-0 bg-indigo-600 rounded-xl shadow-md shadow-indigo-500/30"
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" /> Register
-                </span>
-              </button>
+            <div className="mb-6 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+              <Lock className="w-4 h-4 text-indigo-500" /> Sign in to your workspace
             </div>
 
             {/* Error banner */}
@@ -228,35 +172,6 @@ export const AuthPage: React.FC = () => {
 
             {/* Form with clean correct placeholders */}
             <form onSubmit={handleSubmit} className="space-y-4">
-              <AnimatePresence mode="popLayout">
-                {!isLogin && (
-                  <motion.div
-                    key="name"
-                    initial={{ opacity: 0, height: 0, y: -10 }}
-                    animate={{ opacity: 1, height: 'auto', y: 0 }}
-                    exit={{ opacity: 0, height: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      Full Name
-                    </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
-                        <UserIcon className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="text"
-                        required
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="e.g. John Doe"
-                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm transition-all focus:outline-none ${THEME_CONFIG.surfaces.input}`}
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                   Email Address
@@ -281,11 +196,9 @@ export const AuthPage: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Password
                   </label>
-                  {isLogin && (
-                    <span className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
-                      Forgot password?
-                    </span>
-                  )}
+                  <span className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+                    Forgot password?
+                  </span>
                 </div>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
@@ -296,7 +209,7 @@ export const AuthPage: React.FC = () => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={isLogin ? 'Enter your password' : 'Create a secure password (min. 8 characters)'}
+                    placeholder="Enter your password"
                     className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-sm transition-all focus:outline-none ${THEME_CONFIG.surfaces.input}`}
                   />
                   <button
@@ -323,7 +236,7 @@ export const AuthPage: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <span>{isLogin ? 'Sign In to Workspace' : 'Create Account'}</span>
+                    <span>Sign In to Workspace</span>
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
