@@ -7,10 +7,11 @@ import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import {
-  ACCESS_TOKEN_TTL,
-  REFRESH_ROTATE_AFTER_MS,
+  DEFAULT_ACCESS_TOKEN_TTL,
+  DEFAULT_REFRESH_TOKEN_TTL,
+  JwtDuration,
   REFRESH_ROTATION_GRACE_MS,
-  REFRESH_TOKEN_TTL,
+  tokenTtlToMilliseconds,
 } from './auth.constants';
 
 @Injectable()
@@ -50,7 +51,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -84,7 +88,9 @@ export class AuthService {
 
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
-      throw new UnauthorizedException('Session is no longer active. Please sign in again.');
+      throw new UnauthorizedException(
+        'Session is no longer active. Please sign in again.',
+      );
     }
 
     const presented = digestToken(dto.refreshToken);
@@ -102,11 +108,19 @@ export class AuthService {
 
     // If hash was missing or token is valid, accept and renew
     if (user.refreshTokenHash && !matchesCurrent && !matchesPrevious) {
-      throw new UnauthorizedException('Session is no longer active. Please sign in again.');
+      throw new UnauthorizedException(
+        'Session is no longer active. Please sign in again.',
+      );
     }
 
-    const accessToken = await this.signAccessToken(user._id.toString(), user.email);
-    const refreshToken = await this.signRefreshToken(user._id.toString(), user.email);
+    const accessToken = await this.signAccessToken(
+      user._id.toString(),
+      user.email,
+    );
+    const refreshToken = await this.signRefreshToken(
+      user._id.toString(),
+      user.email,
+    );
     const salt = await bcrypt.genSalt(10);
     const nextHash = await bcrypt.hash(digestToken(refreshToken), salt);
     await this.usersService.rotateRefreshTokenHash(
@@ -140,6 +154,14 @@ export class AuthService {
     };
   }
 
+  getAccessTokenMaxAgeMs(): number {
+    return tokenTtlToMilliseconds(this.accessTokenTtl());
+  }
+
+  getRefreshTokenMaxAgeMs(): number {
+    return tokenTtlToMilliseconds(this.refreshTokenTtl());
+  }
+
   private accessSecret(): string {
     return (
       this.configService.get<string>('JWT_SECRET') ||
@@ -154,17 +176,29 @@ export class AuthService {
     );
   }
 
+  private accessTokenTtl(): JwtDuration {
+    return (this.configService
+      .get<string>('JWT_ACCESS_TOKEN_EXPIRES_IN')
+      ?.trim() || DEFAULT_ACCESS_TOKEN_TTL) as JwtDuration;
+  }
+
+  private refreshTokenTtl(): JwtDuration {
+    return (this.configService
+      .get<string>('JWT_REFRESH_TOKEN_EXPIRES_IN')
+      ?.trim() || DEFAULT_REFRESH_TOKEN_TTL) as JwtDuration;
+  }
+
   private signAccessToken(userId: string, email: string) {
     return this.jwtService.signAsync(
       { sub: userId, email },
-      { secret: this.accessSecret(), expiresIn: ACCESS_TOKEN_TTL },
+      { secret: this.accessSecret(), expiresIn: this.accessTokenTtl() },
     );
   }
 
   private signRefreshToken(userId: string, email: string) {
     return this.jwtService.signAsync(
       { sub: userId, email },
-      { secret: this.refreshSecret(), expiresIn: REFRESH_TOKEN_TTL },
+      { secret: this.refreshSecret(), expiresIn: this.refreshTokenTtl() },
     );
   }
 }

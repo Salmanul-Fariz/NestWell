@@ -20,7 +20,5 @@ COPY apps/backend ./apps/backend
 RUN pnpm --filter backend build
 
 WORKDIR /app/apps/backend
-ENV NODE_ENV=production
-ENV PORT=3000
 EXPOSE 3000
 CMD ["node", "dist/main"]

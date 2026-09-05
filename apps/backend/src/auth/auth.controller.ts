@@ -6,7 +6,6 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { ACCESS_TOKEN_MAX_AGE_MS, REFRESH_TOKEN_MAX_AGE_MS } from './auth.constants';
 import { authCookieOptions, clearAuthCookieOptions } from './cookie-options';
 
 @Controller('auth')
@@ -19,8 +18,16 @@ export class AuthController {
     accessToken: string,
     refreshToken: string,
   ) {
-    res.cookie('access_token', accessToken, authCookieOptions(req, ACCESS_TOKEN_MAX_AGE_MS));
-    res.cookie('refresh_token', refreshToken, authCookieOptions(req, REFRESH_TOKEN_MAX_AGE_MS));
+    res.cookie(
+      'access_token',
+      accessToken,
+      authCookieOptions(req, this.authService.getAccessTokenMaxAgeMs()),
+    );
+    res.cookie(
+      'refresh_token',
+      refreshToken,
+      authCookieOptions(req, this.authService.getRefreshTokenMaxAgeMs()),
+    );
   }
 
   private clearAuthCookies(req: Request, res: Response) {

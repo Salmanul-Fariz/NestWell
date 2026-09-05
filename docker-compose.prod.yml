@@ -1,24 +1,4 @@
 services:
-  mongo:
-    image: mongo:7
-    hostname: mongo
-    command: ["--replSet", "rs0", "--bind_ip_all"]
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "mongosh",
-          "--quiet",
-          "--eval",
-          "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }).ok }",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
   redis:
     image: redis:7-alpine
     volumes:
@@ -28,26 +8,12 @@ services:
     build: .
     ports:
       - "127.0.0.1:3000:3000"
-    environment:
-      PORT: "3000"
-      NODE_ENV: production
-      MONGO_URI: mongodb://mongo:27017/nestwell?replicaSet=rs0&directConnection=true
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: nestwell_super_secret_jwt_access_key_2026
-      JWT_REFRESH_SECRET: nestwell_super_secret_jwt_refresh_key_2026
-      COOKIE_SECURE: "false"
-      CORS_ORIGIN: "*"
-      CALLMEBOT_API_KEY: "8005945"
-      WEB_PUSH_VAPID_PUBLIC: BASuYe4GEYBbx0TVC17DPFVB-BVuX4e-fNRiS3zRiosoVBsIunarYwRlhkIJbmrBDXCDPVmRShfhB-OLvzlR4lc
-      WEB_PUSH_VAPID_PRIVATE: HkUZxWY0ONUsnShFCoF-C2aHcGl6mysZFc0fj4-jr3c
-      WEB_PUSH_CONTACT: mailto:admin@nestwell.local
+    env_file:
+      - ./apps/backend/.env
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_started
     restart: always
 
 volumes:
-  mongo_data:
   redis_data:
