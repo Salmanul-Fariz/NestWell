@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { ThemeProvider, useTheme, type Theme } from './lib/theme-context';
@@ -29,13 +29,18 @@ import {
 type AppTab = 'reports' | 'cashflow' | 'lend' | 'vault' | 'events' | 'settings';
 
 const navigationTabs = [
-  { id: 'reports', label: 'Dashboard', icon: PieChart },
-  { id: 'cashflow', label: 'Cashflow', icon: DollarSign },
-  { id: 'lend', label: 'Lend & Borrow', icon: Users },
-  { id: 'vault', label: 'Vault', icon: KeyRound },
-  { id: 'events', label: 'Events', icon: Calendar },
-  { id: 'settings', label: 'Notifications', icon: Bell },
+  { id: 'reports', path: '/dashboard', label: 'Dashboard', icon: PieChart },
+  { id: 'cashflow', path: '/cashflow', label: 'Cashflow', icon: DollarSign },
+  { id: 'lend', path: '/lend-borrow', label: 'Lend & Borrow', icon: Users },
+  { id: 'vault', path: '/vault', label: 'Vault', icon: KeyRound },
+  { id: 'events', path: '/events', label: 'Events', icon: Calendar },
+  { id: 'settings', path: '/notifications', label: 'Notifications', icon: Bell },
 ] as const;
+
+function tabForPath(pathname: string): AppTab | null {
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+  return navigationTabs.find((tab) => tab.path === normalizedPath)?.id ?? null;
+}
 
 function userInitials(name?: string, email?: string) {
   const source = (name || email || 'N').trim();
@@ -47,8 +52,41 @@ function userInitials(name?: string, email?: string) {
 const DashboardShell: React.FC = () => {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<AppTab>('reports');
+  const [activeTab, setActiveTab] = useState<AppTab>(() => tabForPath(window.location.pathname) ?? 'reports');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const tab = tabForPath(window.location.pathname);
+      if (tab) {
+        setActiveTab(tab);
+      } else {
+        window.history.replaceState(null, '', '/dashboard');
+        setActiveTab('reports');
+      }
+    };
+
+    syncRoute();
+    window.addEventListener('popstate', syncRoute);
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, []);
+
+  const navigateTo = (tab: AppTab) => {
+    const destination = navigationTabs.find((item) => item.id === tab)?.path;
+    if (!destination) return;
+
+    if (window.location.pathname !== destination) {
+      window.history.pushState(null, '', destination);
+    }
+    setActiveTab(tab);
+  };
+
+  const handleNavigation = (event: React.MouseEvent<HTMLAnchorElement>, tab: AppTab) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigateTo(tab);
+    setMobileMenuOpen(false);
+  };
 
   const ThemeSwitcher = (
     <div className="flex items-center p-0.5 rounded-lg bg-slate-100/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
@@ -97,9 +135,10 @@ const DashboardShell: React.FC = () => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
-                <button
+                <a
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  href={tab.path}
+                  onClick={(event) => handleNavigation(event, tab.id)}
                   className={`relative px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer ${
                     isActive
                       ? 'text-indigo-700 dark:text-white'
@@ -119,7 +158,7 @@ const DashboardShell: React.FC = () => {
                     }`}
                   />
                   <span className="relative z-10">{tab.label}</span>
-                </button>
+                </a>
               );
             })}
           </nav>
@@ -165,12 +204,10 @@ const DashboardShell: React.FC = () => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
                   return (
-                    <button
+                    <a
                       key={tab.id}
-                      onClick={() => {
-                        setActiveTab(tab.id);
-                        setMobileMenuOpen(false);
-                      }}
+                      href={tab.path}
+                      onClick={(event) => handleNavigation(event, tab.id)}
                       className={`w-full px-3 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2.5 cursor-pointer ${
                         isActive
                           ? 'bg-indigo-600 text-white shadow-sm'
@@ -179,7 +216,7 @@ const DashboardShell: React.FC = () => {
                     >
                       <Icon className="w-4 h-4" />
                       <span>{tab.label}</span>
-                    </button>
+                    </a>
                   );
                 })}
               </nav>

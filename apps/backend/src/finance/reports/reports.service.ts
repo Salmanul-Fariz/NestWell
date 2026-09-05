@@ -9,6 +9,17 @@ import { NotificationsService } from '../../notifications/notifications.service'
 
 type DateRange = { start: Date; end: Date };
 
+type FinancialPosition = {
+  recordedLiquidCash: number;
+  receivables: number;
+  payables: number;
+  netWorth: number;
+  monthlyBurnRate: number;
+  leverageRatio: number | null;
+  collectionsReceived: number;
+  repaymentsPaid: number;
+};
+
 @Injectable()
 export class ReportsService {
   constructor(
@@ -97,7 +108,11 @@ export class ReportsService {
     };
   }
 
-  /** Cash from ledger entries in a period. Every LEND is cash out; every BORROW is cash in (settlements too). */
+  /**
+   * Cash from party ledger entries in a period. Every LEND is cash paid out and
+   * every BORROW is cash received, including settlements. A repayment received
+   * is stored as BORROW; a repayment paid is stored as LEND.
+   */
   private partyCashFlowInRange(ledgers: LendBorrowDocument[], range: DateRange) {
     const start = range.start.getTime();
     const end = range.end.getTime();
@@ -114,9 +129,59 @@ export class ReportsService {
     }
 
     return {
+      partyCashOut: lendOut,
+      partyCashIn: borrowIn,
       periodLendOut: lendOut,
       periodBorrowIn: borrowIn,
       periodPartyCashFlow: borrowIn - lendOut,
+    };
+  }
+
+  /**
+   * Asset/liability position from all Nestwell records. Liquid cash starts at
+   * zero because the app does not yet collect an opening bank/cash balance.
+   */
+  private async getFinancialPosition(
+    userObjectId: Types.ObjectId,
+    ledgers: LendBorrowDocument[],
+  ): Promise<FinancialPosition> {
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setUTCDate(1);
+    threeMonthsAgo.setUTCHours(0, 0, 0, 0);
+    threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 2);
+
+    const [incomeTotals, expenseTotals, recentExpenseTotals] = await Promise.all([
+      this.incomeModel.aggregate([
+        { $match: { userId: userObjectId } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      this.expenseModel.aggregate([
+        { $match: { userId: userObjectId } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      this.expenseModel.aggregate([
+        { $match: { userId: userObjectId, date: { $gte: threeMonthsAgo } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+    ]);
+
+    const party = this.computePartyBalances(ledgers);
+    const recordedLiquidCash =
+      (incomeTotals[0]?.total || 0) -
+      (expenseTotals[0]?.total || 0) +
+      party.partyCashFlow;
+    const netWorth = recordedLiquidCash + party.netLendBalance - party.netBorrowBalance;
+    const assetBase = recordedLiquidCash + party.netLendBalance;
+
+    return {
+      recordedLiquidCash,
+      receivables: party.netLendBalance,
+      payables: party.netBorrowBalance,
+      netWorth,
+      monthlyBurnRate: (recentExpenseTotals[0]?.total || 0) / 3,
+      leverageRatio: assetBase > 0 ? party.netBorrowBalance / assetBase : null,
+      collectionsReceived: party.totalRepaymentsReceived,
+      repaymentsPaid: party.totalRepaymentsPaid,
     };
   }
 
@@ -187,10 +252,13 @@ export class ReportsService {
       allLedgers,
       range,
     );
+    const financialPosition = await this.getFinancialPosition(userObjectId, allLedgers);
 
-    // Period savings = income − expense ± this month's lend/borrow/settlements
-    const monthSavings = totalIncome - totalExpense + periodPartyCashFlow;
-    const netSavings = monthSavings;
+    // Total balance = income + party cash received − expense − party cash paid.
+    // This includes settlements in their real cash direction.
+    const totalBalance = totalIncome + periodBorrowIn - totalExpense - periodLendOut;
+    const monthSavings = totalBalance;
+    const netSavings = totalBalance;
 
     const weeks = [1, 2, 3, 4].map((week) => {
       const expenseItem = weeklyExpenses.find((e) => e._id === week);
@@ -207,6 +275,8 @@ export class ReportsService {
         expense,
         lend,
         borrow,
+        partyCashOut: lend,
+        partyCashIn: borrow,
         transactions: lend + borrow,
         outflow: expense,
         net: inc - expense + borrow - lend,
@@ -221,6 +291,7 @@ export class ReportsService {
       monthSavings,
       netLendBalance,
       netBorrowBalance,
+      netPartyPosition: netLendBalance - netBorrowBalance,
       totalLendGiven,
       totalBorrowReceived,
       totalRepaymentsReceived,
@@ -228,6 +299,9 @@ export class ReportsService {
       periodLendOut,
       periodBorrowIn,
       periodPartyCashFlow,
+      totalBalance,
+      netCashFlow: totalIncome - totalExpense,
+      financialPosition,
       toReceive: netLendBalance,
       toPay: netBorrowBalance,
       netSavings,
@@ -300,6 +374,8 @@ export class ReportsService {
         expense,
         lend,
         borrow,
+        partyCashOut: lend,
+        partyCashIn: borrow,
         transactions: lend + borrow,
         outflow: expense,
         netSavings: income - expense + borrow - lend,
@@ -312,7 +388,9 @@ export class ReportsService {
       allLedgers,
       range,
     );
-    const yearSavings = totalIncome - totalExpense + periodPartyCashFlow;
+    const financialPosition = await this.getFinancialPosition(userObjectId, allLedgers);
+    const totalBalance = totalIncome + periodBorrowIn - totalExpense - periodLendOut;
+    const yearSavings = totalBalance;
 
     return {
       year,
@@ -321,6 +399,7 @@ export class ReportsService {
       monthSavings: yearSavings,
       netLendBalance,
       netBorrowBalance,
+      netPartyPosition: netLendBalance - netBorrowBalance,
       totalLendGiven,
       totalBorrowReceived,
       totalRepaymentsReceived,
@@ -328,6 +407,9 @@ export class ReportsService {
       periodLendOut,
       periodBorrowIn,
       periodPartyCashFlow,
+      totalBalance,
+      netCashFlow: totalIncome - totalExpense,
+      financialPosition,
       toReceive: netLendBalance,
       toPay: netBorrowBalance,
       netSavings: yearSavings,
