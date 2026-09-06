@@ -13,7 +13,7 @@ export class CreatePasswordEntryDto {
 
   @IsString()
   @IsNotEmpty()
-  encryptedPassword: string;
+  password: string;
 
   @IsOptional()
   @IsString()

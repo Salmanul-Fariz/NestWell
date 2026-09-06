@@ -13,7 +13,7 @@ export class UpdatePasswordEntryDto {
 
   @IsOptional()
   @IsString()
-  encryptedPassword?: string;
+  password?: string;
 
   @IsOptional()
   @IsString()

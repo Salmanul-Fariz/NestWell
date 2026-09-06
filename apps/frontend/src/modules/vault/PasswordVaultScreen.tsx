@@ -1,8 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { encryptPassword, decryptPassword, generateStrongPassword } from '../../lib/crypto';
-import { useAuth } from '../../lib/auth-context';
+import { generateStrongPassword } from '../../lib/crypto';
 import { apiErrorMessage } from '../../lib/utils';
 import { VAULT_CATEGORIES, formatConstantLabel, toConstantCase } from '@nestwell/shared-types';
 import { FormInput, FormSelect, FormTextarea } from '../../components/ui/FormControls';
@@ -30,7 +29,6 @@ interface PasswordEntry {
   _id: string;
   title: string;
   username?: string;
-  encryptedPassword: string;
   url?: string;
   notes?: string;
   category?: string;
@@ -39,8 +37,6 @@ interface PasswordEntry {
 }
 
 export const PasswordVaultScreen: React.FC = () => {
-  const { cryptoKey } = useAuth();
-
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +44,9 @@ export const PasswordVaultScreen: React.FC = () => {
 
   const [decryptedMap, setDecryptedMap] = useState<Record<string, string>>({});
   const [revealedIds, setRevealedIds] = useState<Record<string, boolean>>({});
+  const [revealExpiresAt, setRevealExpiresAt] = useState<Record<string, number>>({});
+  const [revealSecondsRemaining, setRevealSecondsRemaining] = useState<Record<string, number>>({});
+  const revealTimers = useRef<Record<string, number>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Modal State
@@ -79,38 +78,104 @@ export const PasswordVaultScreen: React.FC = () => {
     fetchEntries();
   }, []);
 
-  const toggleRevealPassword = async (entry: PasswordEntry) => {
-    if (!cryptoKey) return;
+  useEffect(() => {
+    return () => Object.values(revealTimers.current).forEach((timer) => window.clearTimeout(timer));
+  }, []);
 
-    if (revealedIds[entry._id]) {
+  useEffect(() => {
+    if (Object.keys(revealExpiresAt).length === 0) return;
+
+    const updateCountdowns = () => {
+      const now = Date.now();
+      setRevealSecondsRemaining((prev) => {
+        const next = { ...prev };
+        Object.entries(revealExpiresAt).forEach(([id, expiresAt]) => {
+          next[id] = Math.max(Math.ceil((expiresAt - now) / 1000), 0);
+        });
+        return next;
+      });
+    };
+
+    updateCountdowns();
+    const interval = window.setInterval(updateCountdowns, 1000);
+    return () => window.clearInterval(interval);
+  }, [revealExpiresAt]);
+
+  const cacheRevealedPassword = (id: string, password: string, expiresAt: string) => {
+    const expiry = new Date(expiresAt).getTime();
+    setDecryptedMap((prev) => ({ ...prev, [id]: password }));
+    setRevealedIds((prev) => ({ ...prev, [id]: true }));
+    setRevealExpiresAt((prev) => ({ ...prev, [id]: expiry }));
+    setRevealSecondsRemaining((prev) => ({ ...prev, [id]: Math.max(Math.ceil((expiry - Date.now()) / 1000), 0) }));
+    window.clearTimeout(revealTimers.current[id]);
+    revealTimers.current[id] = window.setTimeout(
+      () => {
+        setDecryptedMap((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setRevealedIds((prev) => ({ ...prev, [id]: false }));
+        setRevealExpiresAt((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setRevealSecondsRemaining((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      },
+      Math.max(new Date(expiresAt).getTime() - Date.now(), 0),
+    );
+  };
+
+  const revealPassword = async (entry: PasswordEntry) => {
+    const isActive = revealedIds[entry._id] && (revealSecondsRemaining[entry._id] ?? 0) > 0;
+    if (isActive) {
+      window.clearTimeout(revealTimers.current[entry._id]);
+      setDecryptedMap((prev) => {
+        const next = { ...prev };
+        delete next[entry._id];
+        return next;
+      });
       setRevealedIds((prev) => ({ ...prev, [entry._id]: false }));
+      setRevealExpiresAt((prev) => {
+        const next = { ...prev };
+        delete next[entry._id];
+        return next;
+      });
+      setRevealSecondsRemaining((prev) => {
+        const next = { ...prev };
+        delete next[entry._id];
+        return next;
+      });
       return;
     }
 
     try {
-      if (!decryptedMap[entry._id]) {
-        const plain = await decryptPassword(entry.encryptedPassword, cryptoKey);
-        setDecryptedMap((prev) => ({ ...prev, [entry._id]: plain }));
-      }
-      setRevealedIds((prev) => ({ ...prev, [entry._id]: true }));
-    } catch {
-      alert('Decryption failed. Password could not be decrypted.');
+      const response = await api.post(`/vault/${entry._id}/reveal`, { expiresInSeconds: 30 });
+      const { password, expiresAt } = response.data as { password: string; expiresAt: string };
+      cacheRevealedPassword(entry._id, password, expiresAt);
+    } catch (err: any) {
+      alert(apiErrorMessage(err, 'Password could not be revealed.'));
     }
   };
 
   const handleCopyPassword = async (entry: PasswordEntry) => {
-    if (!cryptoKey) return;
     try {
       let plain = decryptedMap[entry._id];
       if (!plain) {
-        plain = await decryptPassword(entry.encryptedPassword, cryptoKey);
-        setDecryptedMap((prev) => ({ ...prev, [entry._id]: plain }));
+        const response = await api.post(`/vault/${entry._id}/reveal`, { expiresInSeconds: 30 });
+        plain = response.data.password;
+        cacheRevealedPassword(entry._id, plain, response.data.expiresAt);
       }
       await navigator.clipboard.writeText(plain);
       setCopiedId(entry._id);
       setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      alert('Decryption failed for copying.');
+    } catch (err: any) {
+      alert(apiErrorMessage(err, 'Password could not be revealed for copying.'));
     }
   };
 
@@ -142,14 +207,13 @@ export const PasswordVaultScreen: React.FC = () => {
       setModalNotes(entry.notes || '');
 
       let existingPassword = decryptedMap[entry._id] || '';
-      if (!existingPassword && cryptoKey) {
+      if (!existingPassword) {
         try {
-          existingPassword = await decryptPassword(entry.encryptedPassword, cryptoKey);
-          setDecryptedMap((prev) => ({ ...prev, [entry._id]: existingPassword }));
-        } catch {
-          setModalError(
-            'Could not decrypt this password. Unlock with the same account password used when it was saved.',
-          );
+          const response = await api.post(`/vault/${entry._id}/reveal`, { expiresInSeconds: 30 });
+          existingPassword = response.data.password;
+          cacheRevealedPassword(entry._id, existingPassword, response.data.expiresAt);
+        } catch (err: any) {
+          setModalError(apiErrorMessage(err, 'Could not reveal this password.'));
         }
       }
       setModalPassword(existingPassword);
@@ -157,7 +221,7 @@ export const PasswordVaultScreen: React.FC = () => {
       setEditingEntry(null);
       setModalTitle('');
       setModalUsername('');
-      setModalPassword(generateStrongPassword(20));
+      setModalPassword('');
       setModalUrl('');
       setModalCategory(DEFAULT_CATEGORY);
       setModalCustomCategory('');
@@ -168,10 +232,6 @@ export const PasswordVaultScreen: React.FC = () => {
 
   const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cryptoKey) {
-      setModalError('Encryption key is not available. Please re-login.');
-      return;
-    }
     if (!modalTitle.trim() || !modalPassword.trim()) {
       setModalError('Title and Password are required.');
       return;
@@ -179,19 +239,16 @@ export const PasswordVaultScreen: React.FC = () => {
 
     // Categories are always stored in CONSTANT_CASE, whatever the user typed.
     const finalCategory =
-      modalCategory === CUSTOM_CATEGORY
-        ? toConstantCase(modalCustomCategory) || 'OTHER'
-        : modalCategory;
+      modalCategory === CUSTOM_CATEGORY ? toConstantCase(modalCustomCategory) || 'OTHER' : modalCategory;
 
     setModalSaving(true);
     setModalError(null);
 
     try {
-      const encryptedPassword = await encryptPassword(modalPassword, cryptoKey);
       const payload = {
         title: modalTitle.trim(),
         username: modalUsername.trim() || undefined,
-        encryptedPassword,
+        password: modalPassword,
         url: modalUrl.trim() || undefined,
         category: finalCategory,
         notes: modalNotes.trim() || undefined,
@@ -242,8 +299,7 @@ export const PasswordVaultScreen: React.FC = () => {
   const filteredEntries = useMemo(() => {
     return entries.filter((e) => {
       const matchesCat =
-        selectedCategory === ALL_CATEGORIES ||
-        (toConstantCase(e.category || '') || 'OTHER') === selectedCategory;
+        selectedCategory === ALL_CATEGORIES || (toConstantCase(e.category || '') || 'OTHER') === selectedCategory;
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         !searchQuery ||
@@ -292,11 +348,7 @@ export const PasswordVaultScreen: React.FC = () => {
         </div>
 
         <div className="w-full sm:w-56 shrink-0">
-          <FormSelect
-            value={selectedCategory}
-            onChange={(val) => setSelectedCategory(val)}
-            options={categoryOptions}
-          />
+          <FormSelect value={selectedCategory} onChange={(val) => setSelectedCategory(val)} options={categoryOptions} />
         </div>
 
         {(selectedCategory !== ALL_CATEGORIES || searchQuery) && (
@@ -331,7 +383,7 @@ export const PasswordVaultScreen: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredEntries.map((item) => {
-            const isRevealed = revealedIds[item._id];
+            const isRevealed = Boolean(revealedIds[item._id]) && (revealSecondsRemaining[item._id] ?? 0) > 0;
             const isCopied = copiedId === item._id;
             const plainPassword = decryptedMap[item._id] || '••••••••••••••••';
 
@@ -377,32 +429,40 @@ export const PasswordVaultScreen: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-xs mb-3">
-                    <span className="text-slate-800 dark:text-slate-200 truncate select-all">
-                      {isRevealed ? plainPassword : '••••••••••••••••'}
-                    </span>
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-xs">
+                      <span className="text-slate-800 dark:text-slate-200 truncate select-all">
+                        {isRevealed ? plainPassword : '••••••••••••••••'}
+                      </span>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => toggleRevealPassword(item)}
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                        title={isRevealed ? 'Hide Password' : 'Show Password'}
-                      >
-                        {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => revealPassword(item)}
+                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                          title={isRevealed ? 'Hide Password' : 'Show Password'}
+                        >
+                          {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
 
-                      <button
-                        onClick={() => handleCopyPassword(item)}
-                        className={`p-1 transition-colors cursor-pointer ${
-                          isCopied
-                            ? 'text-emerald-500 font-bold'
-                            : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
-                        }`}
-                        title="Copy Password"
-                      >
-                        {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                        <button
+                          onClick={() => handleCopyPassword(item)}
+                          className={`p-1 transition-colors cursor-pointer ${
+                            isCopied
+                              ? 'text-emerald-500 font-bold'
+                              : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                          }`}
+                          title="Copy Password"
+                        >
+                          {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </div>
+
+                    {isRevealed && (
+                      <div className="mt-1 text-right text-[10px] text-amber-600 dark:text-amber-400">
+                        Expires in {revealSecondsRemaining[item._id] ?? 0}s
+                      </div>
+                    )}
                   </div>
 
                   {item.notes && (

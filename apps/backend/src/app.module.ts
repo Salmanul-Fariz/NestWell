@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { APP_GUARD } from '@nestjs/core';
+import { join } from 'node:path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
@@ -18,7 +19,10 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 import { ScheduleModule } from '@nestjs/schedule';
 import { RecurringFinanceSchedulerService } from './finance/recurring-scheduler.service';
-import { Expense, ExpenseSchema } from './finance/expense/schemas/expense.schema';
+import {
+  Expense,
+  ExpenseSchema,
+} from './finance/expense/schemas/expense.schema';
 import { Income, IncomeSchema } from './finance/income/schemas/income.schema';
 
 @Module({
@@ -26,7 +30,11 @@ import { Income, IncomeSchema } from './finance/income/schemas/income.schema';
     ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: [
+        join(process.cwd(), 'apps/backend/.env'),
+        join(__dirname, '../.env'),
+        '.env',
+      ],
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
