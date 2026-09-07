@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NestWell Vault</title>
+    <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+    <main class="shell">
+        <header class="brand-row">
+            <div class="brand-mark">NW</div>
+            <div>
+                <h1>NestWell</h1>
+                <p>Personal password vault</p>
+            </div>
+            <button id="lock-button" class="icon-button hidden" title="Logout">Logout</button>
+        </header>
+
+        <section id="vault-view" class="view hidden">
+            <div class="toolbar">
+                <div>
+                    <span class="eyebrow">PASSWORD VAULT</span>
+                    <h2>Your credentials</h2>
+                </div>
+                <button id="refresh-button" class="icon-button" title="Refresh vault">↻</button>
+            </div>
+            <label class="search"><span>⌕</span><input id="search" type="search"
+                    placeholder="Search passwords" /></label>
+            <div id="status" class="status hidden"></div>
+            <div id="entries" class="entries"></div>
+        </section>
+
+        <div id="login-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="login-title">
+            <div class="modal">
+                <div class="modal-heading">
+                    <div class="brand-mark small">NW</div>
+                    <div><span class="eyebrow">SECURE ACCESS</span>
+                        <h2 id="login-title">Sign in to NestWell</h2>
+                    </div>
+                </div>
+                <p id="login-message" class="modal-copy">Unlock your personal password vault.</p>
+                <form id="login-form" class="stack">
+                    <label>Email<input id="email" type="email" autocomplete="username" required
+                            placeholder="name@example.com" /></label>
+                    <label>Password<input id="password" type="password" autocomplete="current-password" required
+                            placeholder="Enter your password" /></label>
+                    <button class="primary-button" type="submit">Sign in <span>→</span></button>
+                </form>
+            </div>
+        </div>
+
+        <footer><span class="status-dot"></span><span id="footer-status">Local extension session</span></footer>
+    </main>
+    <script type="module" src="popup.js"></script>
+</body>
+
+</html>

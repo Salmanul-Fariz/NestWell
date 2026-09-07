@@ -1,0 +1,325 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500&display=swap');
+
+:root {
+  color-scheme: dark;
+  --canvas: #030712;
+  --surface: rgba(15, 23, 42, 0.92);
+  --surface-soft: rgba(8, 14, 28, 0.82);
+  --line: rgba(255, 255, 255, 0.09);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #818cf8;
+  --accent-strong: #4f46e5;
+  --success: #34d399;
+  --warning: #fbbf24;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  width: 380px;
+  min-height: 520px;
+  margin: 0;
+  color: var(--text);
+  background: radial-gradient(circle at 8% 0%, rgba(79, 70, 229, 0.27), transparent 40%), var(--canvas);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 12px;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+.shell {
+  min-height: 520px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.brand-row,
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.brand-row {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.3);
+}
+.brand-mark.small {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+h2 {
+  margin-top: 4px;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+.brand-row p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.view {
+  padding-top: 24px;
+  flex: 1;
+}
+.section-heading {
+  margin-bottom: 22px;
+}
+.eyebrow {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+.stack {
+  display: grid;
+  gap: 14px;
+}
+label {
+  display: grid;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 700;
+}
+input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 11px 12px;
+  color: var(--text);
+  background: var(--surface-soft);
+  outline: none;
+}
+input:focus {
+  border-color: rgba(129, 140, 248, 0.75);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
+}
+input::placeholder {
+  color: #64748b;
+}
+.primary-button {
+  border: 0;
+  border-radius: 11px;
+  padding: 12px 14px;
+  color: white;
+  font-weight: 800;
+  background: linear-gradient(100deg, #4f46e5, #7c3aed);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.25);
+}
+.primary-button:hover {
+  filter: brightness(1.1);
+}
+.primary-button span {
+  float: right;
+  font-size: 16px;
+  line-height: 12px;
+}
+.icon-button {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 6px 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+}
+.icon-button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.hidden {
+  display: none !important;
+}
+.toolbar {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.toolbar .icon-button {
+  margin-top: 2px;
+}
+.search {
+  position: relative;
+  display: block;
+  margin: 18px 0 14px;
+}
+.search span {
+  position: absolute;
+  top: 9px;
+  left: 12px;
+  color: var(--muted);
+  font-size: 17px;
+}
+.search input {
+  padding-left: 32px;
+}
+.entries {
+  display: grid;
+  gap: 9px;
+  max-height: 335px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.entry {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.66);
+}
+.entry-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.entry-title {
+  font-size: 12px;
+  font-weight: 800;
+}
+.entry-url {
+  max-width: 210px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry-user {
+  margin-top: 10px;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.entry-actions button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  font-weight: 700;
+}
+.entry-actions button:hover {
+  border-color: rgba(129, 140, 248, 0.65);
+  color: white;
+}
+.secret {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.countdown {
+  margin-left: auto;
+  color: var(--warning);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.status {
+  margin-bottom: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 9px;
+  padding: 9px;
+  color: var(--warning);
+  background: rgba(251, 191, 36, 0.08);
+  font-size: 10px;
+}
+.empty {
+  padding: 34px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.error {
+  color: #fda4af;
+}
+footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 16px;
+  color: #64748b;
+  font-size: 9px;
+}
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 9px rgba(52, 211, 153, 0.75);
+}
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 7, 18, 0.76);
+  backdrop-filter: blur(10px);
+}
+.modal {
+  width: 100%;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: 20px;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.modal-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.modal-heading h2 {
+  font-size: 17px;
+}
+.modal-copy {
+  margin-bottom: 17px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}

@@ -61,7 +61,9 @@ api.interceptors.response.use(
         await refreshSession();
         return api(originalRequest);
       } catch (refreshError) {
-        onSessionExpired?.();
+        if ((refreshError as any).response?.status === 401) {
+          onSessionExpired?.();
+        }
         return Promise.reject(refreshError);
       }
     }

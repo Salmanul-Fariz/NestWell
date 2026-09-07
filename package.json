@@ -6,8 +6,10 @@
   "scripts": {
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
-    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
-    "build": "pnpm --filter frontend build && pnpm --filter backend build",
+    "dev": "concurrently -n \"BACKEND,FRONTEND,EXTENSION\" -c \"blue,green,yellow\" \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\" \"pnpm dev:extension\"",
+    "dev:extension": "pnpm --dir apps/chrome-extension dev",
+    "build": "pnpm --filter frontend build && pnpm --filter backend build && pnpm build:extension",
+    "build:extension": "pnpm --dir apps/chrome-extension build",
     "start:prod": "pnpm --filter backend start:prod",
     "test": "pnpm --filter \"*\" test"
   },

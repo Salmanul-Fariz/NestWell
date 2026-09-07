@@ -8,12 +8,7 @@ import {
   refreshSession,
   setSessionExpiredHandler,
 } from './api';
-import {
-  clearPersistedCryptoKey,
-  deriveKey,
-  persistCryptoKey,
-  restoreCryptoKey,
-} from './crypto';
+import { clearPersistedCryptoKey, deriveKey, persistCryptoKey, restoreCryptoKey } from './crypto';
 
 export interface User {
   userId: string;
@@ -71,7 +66,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const storedKey = await restoreCryptoKey();
         setCryptoKey(storedKey);
       } catch {
-        clearSession();
+        // Keep the existing browser session during a temporary API/network failure.
+        // A confirmed 401 is handled by the API interceptor and clears the session.
+        if (!userRef.current) {
+          setUser(null);
+          setCryptoKey(null);
+        }
       }
     } finally {
       setLoading(false);
