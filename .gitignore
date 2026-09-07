@@ -5,6 +5,7 @@ node_modules
 # Build & compiled outputs
 dist
 **/dist/
+**/dist-prod/
 build
 **/build/
 out
