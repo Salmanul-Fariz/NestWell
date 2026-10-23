@@ -350,13 +350,13 @@ export const LendBorrowScreen: React.FC = () => {
                           : "bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 font-bold flex items-center justify-center text-sm">
                           {name.slice(0, 2).toUpperCase()}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <h5 className="font-bold text-sm text-slate-900 dark:text-white">
+                            <h5 className="truncate font-bold text-sm text-slate-900 dark:text-white">
                               {name}
                             </h5>
                             <button
@@ -377,7 +377,7 @@ export const LendBorrowScreen: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="text-right">
+                      <div className="shrink-0 text-right">
                         <span
                           className={`text-xs font-bold font-mono ${
                             bal > 0
@@ -410,7 +410,7 @@ export const LendBorrowScreen: React.FC = () => {
 
           <div className="lg:col-span-8 lg:h-full lg:min-h-0">
             {activeLedger ? (
-              <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6 lg:h-full lg:overflow-y-auto">
+              <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 shadow-sm space-y-6 lg:h-full lg:overflow-y-auto">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800">
                   <div>
                     <span className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
@@ -579,12 +579,12 @@ export const LendBorrowScreen: React.FC = () => {
       {/* Add Party Modal */}
       <AnimatePresence>
         {isPartyModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl"
+              className="my-auto w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-8 shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">
@@ -653,12 +653,12 @@ export const LendBorrowScreen: React.FC = () => {
       {/* Add Entry Modal */}
       <AnimatePresence>
         {isEntryModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl"
+              className="my-auto w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-8 shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">
@@ -748,12 +748,12 @@ export const LendBorrowScreen: React.FC = () => {
       {/* Settle Modal */}
       <AnimatePresence>
         {isSettleModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl"
+              className="my-auto w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-8 shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">

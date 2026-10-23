@@ -15,6 +15,7 @@ import { PartyModule } from './finance/party/party.module';
 import { LendBorrowModule } from './finance/lend-borrow/lend-borrow.module';
 import { ReportsModule } from './finance/reports/reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SprintModule } from './sprint/sprint.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 import { ScheduleModule } from '@nestjs/schedule';
@@ -59,6 +60,7 @@ import { Income, IncomeSchema } from './finance/income/schemas/income.schema';
     LendBorrowModule,
     ReportsModule,
     NotificationsModule,
+    SprintModule,
   ],
   controllers: [AppController],
   providers: [

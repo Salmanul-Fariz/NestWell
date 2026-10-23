@@ -270,8 +270,8 @@ export const EventsScreen: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold">
             <button
               onClick={() => setViewMode('list')}
               className={`px-3 py-1.5 rounded-lg transition-all ${
@@ -311,7 +311,7 @@ export const EventsScreen: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="fixed bottom-6 right-6 z-50 max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xl shadow-indigo-500/10 flex items-start gap-3.5 backdrop-blur-xl"
+            className="fixed bottom-4 left-4 right-4 z-50 flex items-start gap-3.5 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl shadow-indigo-500/10 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 sm:bottom-6 sm:left-auto sm:right-6 sm:max-w-md"
           >
             <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
               <Bell className="w-4 h-4" />
@@ -450,7 +450,7 @@ export const EventsScreen: React.FC = () => {
           })}
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+        <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-3 shadow-sm sm:p-6">
           {/* Calendar Header with Month & Year dropdowns + prev/next */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div className="flex items-center gap-2">
@@ -511,13 +511,15 @@ export const EventsScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2">
+          <div className="overflow-x-auto pb-2">
+          <div className="min-w-[560px]">
+          <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-bold text-slate-400 mb-2 sm:gap-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
               <div key={d} className="py-1">{d}</div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
             {(() => {
               const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
               const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
@@ -537,7 +539,7 @@ export const EventsScreen: React.FC = () => {
               return (
                 <div
                   key={idx}
-                  className={`min-h-[95px] p-2 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  className={`min-h-[76px] p-1.5 rounded-xl border text-left flex flex-col justify-between transition-all sm:min-h-[95px] sm:p-2 ${
                     isValidDay
                       ? 'bg-slate-50 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80'
                       : 'opacity-20 border-transparent'
@@ -575,18 +577,20 @@ export const EventsScreen: React.FC = () => {
             });
             })()}
           </div>
+          </div>
+          </div>
         </div>
       )}
 
       {/* Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="my-auto w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-8 shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2.5">

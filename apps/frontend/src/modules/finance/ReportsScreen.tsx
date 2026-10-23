@@ -633,7 +633,7 @@ export const ReportsScreen: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+          <div className="min-w-0 lg:col-span-7 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 shadow-sm">
             <div className="mb-4">
               <h4 className="font-bold text-base text-slate-900 dark:text-white">
                 {viewMode === 'monthly' ? `${periodLabel} cashflow` : `${selectedYear} cashflow`}
@@ -680,7 +680,7 @@ export const ReportsScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="lg:col-span-5 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+          <div className="min-w-0 lg:col-span-5 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 shadow-sm flex flex-col justify-between">
             <div>
               <h4 className="font-bold text-base text-slate-900 dark:text-white">Expense allocation</h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">

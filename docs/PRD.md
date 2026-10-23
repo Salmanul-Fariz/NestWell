@@ -27,6 +27,7 @@ Alternates: **Anchor** (plainer, "stability/trust" metaphor), **Ledgerly** (lean
 1. **Password Organization** — a private, encrypted credential vault
 2. **Event Management** — calendar with recurring events and multi-offset reminders
 3. **Finance Management** — Expense, Income, EMI/Loan, Lend/Borrow — each its own collection, with cross-module reports and charts
+4. **Sprint Tracking** — configurable work sprints, task planning, daily check-ins, reviews, and progress analytics
 
 **Target user:** you, alone, for now. No multi-user/household layer in this version — removed deliberately to keep the schema and permission logic simple; can be reintroduced later (see §9 — it's a small addition then, not a "free" one, since the field no longer exists in the schema today).
 
@@ -123,6 +124,7 @@ nestwell/
 │   │   │   ├── users/
 │   │   │   ├── password-vault/
 │   │   │   ├── events/
+│   │   │   ├── sprint/
 │   │   │   ├── finance/
 │   │   │   │   ├── expense/
 │   │   │   │   ├── income/
@@ -154,6 +156,7 @@ nestwell/
 │       │       ├── auth/
 │       │       ├── vault/
 │       │       ├── events/
+│       │       ├── sprint/
 │       │       └── finance/
 │       │           ├── expense/ income/ emi/ party/ lend-borrow/ reports/
 │       └── package.json
@@ -162,6 +165,18 @@ nestwell/
 ```
 
 Note: `category/` module removed (§5 explains why); `party/` added ahead of `lend-borrow/` since a ledger now requires a party to reference.
+
+### Sprint Tracking
+
+Sprint data is scoped to the authenticated user. The Sprint workspace includes:
+
+- A sprint setup flow for the start date, duration, rest days, and optional starter tasks; active sprints can be extended without clearing their history.
+- Task planning with status, priority, scheduled date, estimated hours, notes, search and filters, repeat scheduling, and bulk deletion.
+- A daily log for accomplishments, obstacles, sleep, focus time, and scheduled-task completion.
+- Weekly and final reviews, including week-level progress summaries.
+- Overview and analytics for progress, completed hours, active days, streaks, and daily completion across today, week, weekend, month, or the full sprint.
+
+Sprint setup and data are available from the categorized **Overview → Sprint** navigation. The SprintTracker demo/reset commands are intentionally not part of Nestwell because they would be unsafe for account data.
 
 ---
 

@@ -19,16 +19,19 @@ import {
   Sun,
   Moon,
   Laptop,
+  UserRound,
 } from 'lucide-react';
 
 export const AuthPage: React.FC = () => {
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const { theme, setTheme } = useTheme();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,9 +40,20 @@ export const AuthPage: React.FC = () => {
     setSubmitting(true);
 
     try {
-      await login(email, password);
+      if (isSigningUp) {
+        await register(name, email, password);
+      } else {
+        await login(email, password);
+      }
     } catch (err: any) {
-      setError(apiErrorMessage(err, 'Incorrect credentials or connection error. Please try again.'));
+      setError(
+        apiErrorMessage(
+          err,
+          isSigningUp
+            ? 'Unable to create your account. Please try again.'
+            : 'Incorrect credentials or connection error. Please try again.',
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -52,7 +66,7 @@ export const AuthPage: React.FC = () => {
   ];
 
   return (
-    <div className={`min-h-screen w-full flex items-center justify-center relative overflow-hidden px-4 py-12 ${THEME_CONFIG.surfaces.body}`}>
+    <div className={`min-h-screen w-full flex items-center justify-center relative overflow-hidden px-4 py-8 sm:py-12 ${THEME_CONFIG.surfaces.body}`}>
       {/* Top Floating Theme Switcher (Dark / Light / System) */}
       <div className="fixed top-5 right-5 z-50 flex items-center p-1 rounded-2xl bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-black/5">
         {(['dark', 'light', 'system'] as Theme[]).map((mode) => {
@@ -136,7 +150,7 @@ export const AuthPage: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
           className="lg:col-span-6 w-full max-w-md mx-auto"
         >
-          <div className={`rounded-3xl p-7 sm:p-9 relative overflow-hidden shadow-2xl ${THEME_CONFIG.surfaces.card}`}>
+          <div className={`rounded-3xl p-5 sm:p-9 relative overflow-hidden shadow-2xl ${THEME_CONFIG.surfaces.card}`}>
             <div className="flex items-center justify-between mb-7">
               <div className="flex items-center gap-3">
                 <NestwellLogo size={44} />
@@ -152,7 +166,12 @@ export const AuthPage: React.FC = () => {
             </div>
 
             <div className="mb-6 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-              <Lock className="w-4 h-4 text-indigo-500" /> Sign in to your workspace
+              {isSigningUp ? (
+                <UserRound className="w-4 h-4 text-indigo-500" />
+              ) : (
+                <Lock className="w-4 h-4 text-indigo-500" />
+              )}
+              {isSigningUp ? 'Create your account' : 'Sign in to your workspace'}
             </div>
 
             {/* Error banner */}
@@ -172,6 +191,27 @@ export const AuthPage: React.FC = () => {
 
             {/* Form with clean correct placeholders */}
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isSigningUp && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Name
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                      <UserRound className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Your name"
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm transition-all focus:outline-none ${THEME_CONFIG.surfaces.input}`}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                   Email Address
@@ -196,9 +236,11 @@ export const AuthPage: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Password
                   </label>
-                  <span className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
-                    Forgot password?
-                  </span>
+                  {!isSigningUp && (
+                    <span className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+                      Forgot password?
+                    </span>
+                  )}
                 </div>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
@@ -207,9 +249,10 @@ export const AuthPage: React.FC = () => {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
+                    minLength={isSigningUp ? 6 : undefined}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
+                    placeholder={isSigningUp ? 'Create a password (at least 6 characters)' : 'Enter your password'}
                     className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-sm transition-all focus:outline-none ${THEME_CONFIG.surfaces.input}`}
                   />
                   <button
@@ -236,12 +279,27 @@ export const AuthPage: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <span>Sign In to Workspace</span>
+                    <span>{isSigningUp ? 'Create Account' : 'Sign In to Workspace'}</span>
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
               </motion.button>
             </form>
+
+            <p className="mt-5 text-center text-xs text-slate-500 dark:text-slate-400">
+              {isSigningUp ? 'Already have an account?' : 'New to Nestwell?'}{' '}
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  setIsSigningUp(!isSigningUp);
+                  setError(null);
+                }}
+                className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 disabled:opacity-50"
+              >
+                {isSigningUp ? 'Sign in' : 'Sign up'}
+              </button>
+            </p>
 
             <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
