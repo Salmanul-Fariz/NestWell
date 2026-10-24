@@ -393,7 +393,7 @@ export class SprintService {
     };
   }
 
-  async getAnalytics(userId: string, requestedPeriod: string) {
+  async getAnalytics(userId: string, requestedPeriod: string, requestedWeek?: string) {
     const allowedPeriods = ['day', 'week', 'weekend', 'month', 'sprint'];
     const period = allowedPeriods.includes(requestedPeriod) ? requestedPeriod : 'week';
     const owner = this.owner(userId);
@@ -405,7 +405,32 @@ export class SprintService {
     const date = today();
     let from = date;
     let to = date;
-    if (period === 'week' || period === 'weekend') from = addDays(date, -6);
+    if (period === 'week') {
+      if (requestedWeek !== undefined) {
+        const week = Number(requestedWeek);
+        const weekCount = settings
+          ? Math.ceil(settings.totalDays / 7)
+          : Math.max(1, Math.ceil(allLogs.length / 7));
+        if (!Number.isInteger(week) || week < 1 || week > weekCount) {
+          throw new BadRequestException('Choose a valid sprint week.');
+        }
+        const selectedWeek = Math.min(week, weekCount);
+        const startDate = settings
+          ? addDays(settings.startDate, (selectedWeek - 1) * 7)
+          : allLogs[(selectedWeek - 1) * 7]?.date ?? date;
+        const endDate = settings
+          ? addDays(
+              settings.startDate,
+              Math.min(selectedWeek * 7, settings.totalDays) - 1,
+            )
+          : allLogs[Math.min(selectedWeek * 7, allLogs.length) - 1]?.date ?? date;
+        from = startDate;
+        to = endDate;
+      } else {
+        from = addDays(date, -6);
+      }
+    }
+    if (period === 'weekend') from = addDays(date, -6);
     if (period === 'month') from = `${date.slice(0, 7)}-01`;
     if (period === 'sprint') from = settings?.startDate ?? allLogs[0]?.date ?? date;
 
@@ -434,10 +459,11 @@ export class SprintService {
       };
     });
     const relevantDays = new Set(days.map((item) => item.date));
+    const taskRangeEnd = period === 'week' && requestedWeek !== undefined ? to : date;
     const rangeTasks = tasks.filter(
       (task) =>
         task.deadline >= from &&
-        task.deadline <= date &&
+        task.deadline <= taskRangeEnd &&
         (period !== 'weekend' || relevantDays.has(task.deadline)),
     );
     const completedTasks = rangeTasks.filter((task) => task.status === 'done');

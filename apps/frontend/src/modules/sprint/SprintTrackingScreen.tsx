@@ -217,6 +217,9 @@ export const SprintTrackingScreen: React.FC = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [reviewWeekStats, setReviewWeekStats] = useState<WeekStats | null>(null);
   const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const [analyticsWeek, setAnalyticsWeek] = useState<number | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -282,6 +285,19 @@ export const SprintTrackingScreen: React.FC = () => {
     }
   }, [toast]);
 
+  const sprintWeekCount = Math.max(1, Math.ceil((settings?.totalDays ?? 1) / 7));
+  const currentSprintWeek = stats
+    ? Math.min(
+        sprintWeekCount,
+        stats.day
+          ? Math.max(1, Math.ceil(stats.day / 7))
+          : stats.today > stats.sprintEndDate
+            ? sprintWeekCount
+            : 1,
+      )
+    : 1;
+  const selectedAnalyticsWeek = Math.min(analyticsWeek ?? currentSprintWeek, sprintWeekCount);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -289,7 +305,11 @@ export const SprintTrackingScreen: React.FC = () => {
   useEffect(() => {
     if (section !== 'analytics' || !settings) return;
     let cancelled = false;
-    api.get<AnalyticsData>(`/sprint/analytics?period=${period}`)
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    setAnalytics(null);
+    const weekQuery = period === 'week' ? `&week=${selectedAnalyticsWeek}` : '';
+    api.get<AnalyticsData>(`/sprint/analytics?period=${period}${weekQuery}`)
       .then((response) => {
         if (!cancelled) {
           setAnalytics(response.data);
@@ -297,12 +317,19 @@ export const SprintTrackingScreen: React.FC = () => {
         }
       })
       .catch((requestError: unknown) => {
-        if (!cancelled) toast.error(apiErrorMessage(requestError, 'Could not load sprint analytics.'));
+        if (!cancelled) {
+          const message = apiErrorMessage(requestError, 'Could not load sprint analytics.');
+          setAnalyticsError(message);
+          toast.error(message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAnalyticsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [period, section, settings, toast]);
+  }, [period, section, selectedAnalyticsWeek, settings, toast]);
 
   useEffect(() => {
     if (reviewWeek == null) return;
@@ -645,7 +672,7 @@ export const SprintTrackingScreen: React.FC = () => {
           </p>
         </div>
         {settings && (
-          <button type="button" className={buttonClass} onClick={() => { setTaskForm(taskBlank(stats?.today)); setSection('tasks'); }}>
+          <button type="button" className={buttonClass} onClick={() => setTaskForm(taskBlank(stats?.today))}>
             <Plus className="h-4 w-4" /> Add task
           </button>
         )}
@@ -725,11 +752,6 @@ export const SprintTrackingScreen: React.FC = () => {
                     <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{settings ? `${Math.min(100, Math.round((stats.day / settings.totalDays) * 100))}%` : '0%'}</span>
                   </div>
                 </div>
-                <form onSubmit={extendSprint} className="flex shrink-0 items-center gap-2">
-                  <label className="sr-only" htmlFor="extend-sprint-days">Days to add</label>
-                  <input id="extend-sprint-days" className={`${inputClass} w-24`} type="number" min="1" max="365" value={extendDays} onChange={(event) => setExtendDays(Number(event.target.value))} />
-                  <button type="submit" className={secondaryButtonClass} disabled={saving}><Plus className="h-4 w-4" /> Extend</button>
-                </form>
               </section>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -745,7 +767,7 @@ export const SprintTrackingScreen: React.FC = () => {
               </div>
 
               <section className={panelClass}>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900 dark:text-white">Today’s tasks</h3><p className="mt-1 text-xs text-slate-500">Move work through the board as you make progress.</p></div><button type="button" className={secondaryButtonClass} onClick={() => { setTaskForm(taskBlank(stats.today)); setSection('tasks'); }}><Plus className="h-4 w-4" /> Add task</button></div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900 dark:text-white">Today’s tasks</h3><p className="mt-1 text-xs text-slate-500">Move work through the board as you make progress.</p></div><button type="button" className={secondaryButtonClass} onClick={() => setTaskForm(taskBlank(stats.today))}><Plus className="h-4 w-4" /> Add task</button></div>
                 <div className="grid gap-3 md:grid-cols-3">
                   {statuses.map((status) => {
                     const list = stats.todayTasks.filter((task) => task.status === status);
@@ -993,7 +1015,9 @@ export const SprintTrackingScreen: React.FC = () => {
 
           {section === 'analytics' && (
             <div className="space-y-5">
-              <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Sprint analytics</h2><p className="mt-1 text-sm text-slate-500">Completion, effort, and daily wellbeing over time.</p></div><div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">{periods.map((item) => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${period === item.id ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`}>{item.label}</button>)}</div></header>
+              <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Sprint analytics</h2><p className="mt-1 text-sm text-slate-500">Completion, effort, and daily wellbeing over time.</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">{periods.map((item) => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${period === item.id ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`}>{item.label}</button>)}</div>{period === 'week' && <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300"><span>Sprint week</span><select aria-label="Select sprint week" className={`${inputClass} w-auto min-w-28 py-2`} value={selectedAnalyticsWeek} onChange={(event) => setAnalyticsWeek(Number(event.target.value))}>{Array.from({ length: sprintWeekCount }, (_, index) => index + 1).map((week) => <option key={week} value={week}>Week {week}</option>)}</select></label>}</div></header>
+              {analyticsLoading && <p className="text-sm text-slate-500" role="status">Loading analytics…</p>}
+              {analyticsError && !analyticsLoading && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" role="alert">{analyticsError}</p>}
               {analytics && <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[{ label: 'Tasks complete', value: `${analytics.metrics.tasksDone}/${analytics.metrics.tasksTotal}` }, { label: 'Hours completed', value: `${analytics.metrics.hours}h` }, { label: 'Average completion', value: `${analytics.metrics.avgScore}%` }, { label: 'Active days', value: String(analytics.metrics.activeDays) }].map((metric) => <article key={metric.label} className={panelClass}><p className="text-xs text-slate-500">{metric.label}</p><p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{metric.value}</p></article>)}</div>
                 <section className={panelClass}><div className="mb-3"><h3 className="font-semibold text-slate-900 dark:text-white">What stands out</h3><p className="mt-1 text-xs text-slate-500">Highlights from the selected period.</p></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs text-slate-500">Best completion</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{bestCompletionDay ? `${bestCompletionDay.score}%` : '—'}</p><p className="text-xs text-slate-500">{bestCompletionDay ? `${formatDay(bestCompletionDay.date)} · ${bestCompletionDay.done}/${bestCompletionDay.total} tasks` : 'No scheduled tasks'}</p></div><div><p className="text-xs text-slate-500">Most hours completed</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{bestHoursDay ? `${bestHoursDay.hours}h` : '—'}</p><p className="text-xs text-slate-500">{bestHoursDay ? formatDay(bestHoursDay.date) : 'No completed task hours'}</p></div><div><p className="text-xs text-slate-500">Average focus</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{analytics.metrics.focusAvg == null ? '—' : `${analytics.metrics.focusAvg}h`}</p></div><div><p className="text-xs text-slate-500">Average sleep</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{analytics.metrics.sleepAvg == null ? '—' : `${analytics.metrics.sleepAvg}h`}</p></div></div></section>
                 <section className={panelClass}><div className="mb-4 flex items-center justify-between"><div><h3 className="font-semibold text-slate-900 dark:text-white">Daily progress</h3><p className="mt-1 text-xs text-slate-500">{analytics.from === analytics.to ? formatDay(analytics.from) : `${formatDay(analytics.from)} – ${formatDay(analytics.to)}`}</p></div><span className="text-xs text-slate-500">{analytics.days.length} days</span></div>

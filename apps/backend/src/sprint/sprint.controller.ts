@@ -156,8 +156,9 @@ export class SprintController {
   getAnalytics(
     @CurrentUser('userId') userId: string,
     @Query('period') period = 'week',
+    @Query('week') week?: string,
   ) {
-    return this.sprintService.getAnalytics(userId, period);
+    return this.sprintService.getAnalytics(userId, period, week);
   }
 
   @Get('stats/week/:week')

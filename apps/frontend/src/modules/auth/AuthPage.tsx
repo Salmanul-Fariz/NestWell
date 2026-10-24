@@ -20,6 +20,7 @@ import {
   Moon,
   Laptop,
   UserRound,
+  Target,
 } from 'lucide-react';
 
 export const AuthPage: React.FC = () => {
@@ -63,6 +64,7 @@ export const AuthPage: React.FC = () => {
     { icon: KeyRound, title: 'Encrypted Vault', desc: 'Zero-knowledge master key', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
     { icon: Calendar, title: 'Smart Calendar', desc: 'Multi-channel event alerts', color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20' },
     { icon: DollarSign, title: 'Cashflow Ledger', desc: 'Income, expenses & settlements', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' },
+    { icon: Target, title: 'Sprint Tracker', desc: 'Plan tasks, focus & track progress', color: 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20' },
   ];
 
   return (
@@ -123,7 +125,7 @@ export const AuthPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             {featurePills.map((pill, idx) => {
               const Icon = pill.icon;
               return (
