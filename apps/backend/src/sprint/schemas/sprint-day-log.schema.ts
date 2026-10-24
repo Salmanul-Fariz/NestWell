@@ -26,6 +26,9 @@ export class SprintDayLog {
   focusHours?: number | null;
 
   @Prop({ type: String, default: '', maxlength: 4000 })
+  focusVision: string;
+
+  @Prop({ type: String, default: '', maxlength: 4000 })
   accomplishments: string;
 
   @Prop({ type: String, default: '', maxlength: 4000 })

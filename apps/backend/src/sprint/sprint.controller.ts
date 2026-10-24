@@ -39,6 +39,11 @@ export class SprintController {
     return this.sprintService.configure(userId, dto);
   }
 
+  @Delete('settings')
+  removeSprint(@CurrentUser('userId') userId: string) {
+    return this.sprintService.removeSprint(userId);
+  }
+
   @Post('settings/extend')
   extend(
     @CurrentUser('userId') userId: string,

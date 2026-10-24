@@ -153,6 +153,11 @@ export class UpdateSprintDayLogDto {
   @IsOptional()
   @IsString()
   @MaxLength(4000)
+  focusVision?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
   accomplishments?: string;
 
   @IsOptional()

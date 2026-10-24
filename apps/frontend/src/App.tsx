@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { ThemeProvider, useTheme, type Theme } from './lib/theme-context';
 import { NestwellLogo } from './components/shared/NestwellLogo';
+import { ToastProvider } from './components/shared/ToastProvider';
 import { AuthPage } from './modules/auth/AuthPage';
 import { PasswordVaultScreen } from './modules/vault/PasswordVaultScreen';
 import { EventsScreen } from './modules/events/EventsScreen';
@@ -525,9 +526,11 @@ const RootApp: React.FC = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <RootApp />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <RootApp />
+        </AuthProvider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

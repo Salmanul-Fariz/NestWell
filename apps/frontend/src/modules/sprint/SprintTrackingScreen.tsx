@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   CalendarDays,
   Check,
@@ -8,14 +9,17 @@ import {
   ChevronRight,
   Clock3,
   Flame,
+  GripVertical,
   Plus,
   Save,
   Target,
   Trash2,
+  X,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { apiErrorMessage, todayDateOnly } from '../../lib/utils';
 import { THEME_CONFIG } from '../../lib/theme-constants';
+import { useToast } from '../../components/shared/toast-context';
 
 type TaskStatus = 'todo' | 'doing' | 'done';
 type TaskPriority = 'high' | 'medium' | 'low';
@@ -39,6 +43,7 @@ interface SprintDayLog {
   isWeekend: boolean;
   sleepHours?: number | null;
   focusHours?: number | null;
+  focusVision?: string;
   accomplishments: string;
   obstacles: string;
   score: number;
@@ -72,7 +77,7 @@ interface SprintStats {
   avgScore: number;
   streak: number;
   dailyScore: number;
-  dailyLog: Pick<SprintDayLog, 'day' | 'date' | 'isWeekend' | 'sleepHours' | 'focusHours' | 'accomplishments' | 'obstacles'> | null;
+  dailyLog: Pick<SprintDayLog, 'day' | 'date' | 'isWeekend' | 'sleepHours' | 'focusHours' | 'focusVision' | 'accomplishments' | 'obstacles'> | null;
   todayTasks: SprintTask[];
   upcoming: SprintTask[];
   sprintEndDate: string;
@@ -169,6 +174,16 @@ const taskBlank = (deadline = todayDateOnly()): TaskForm => ({
   hours: 1,
   notes: '',
 });
+const taskEditForm = (task: SprintTask): TaskForm => ({
+  _id: task._id,
+  title: task.title,
+  status: task.status,
+  priority: task.priority,
+  deadline: task.deadline,
+  repeatUntil: '',
+  hours: task.hours,
+  notes: task.notes,
+});
 const reviewBlank = (week: number): ReviewForm => ({
   type: 'weekly',
   week,
@@ -179,8 +194,16 @@ const reviewBlank = (week: number): ReviewForm => ({
 const formatDay = (date: string) =>
   new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
     .format(new Date(`${date}T00:00:00.000Z`));
+const previousDate = (date: string) => {
+  const result = new Date(`${date}T00:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() - 1);
+  return result.toISOString().slice(0, 10);
+};
+const isOverdue = (task: SprintTask, today: string) =>
+  task.status !== 'done' && Boolean(task.deadline) && task.deadline < today;
 
 export const SprintTrackingScreen: React.FC = () => {
+  const toast = useToast();
   const [section, setSection] = useState<SprintSection>('overview');
   const [settings, setSettings] = useState<SprintSettings | null>(null);
   const [stats, setStats] = useState<SprintStats | null>(null);
@@ -193,8 +216,11 @@ export const SprintTrackingScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<TaskForm | null>(null);
+  const [viewingTask, setViewingTask] = useState<SprintTask | null>(null);
+  const [taskLayout, setTaskLayout] = useState<'board' | 'list'>('board');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dropTargetStatus, setDropTargetStatus] = useState<TaskStatus | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm | null>(null);
   const [selectedLog, setSelectedLog] = useState<SprintDayLog | null>(null);
   const [taskSearch, setTaskSearch] = useState('');
@@ -216,6 +242,7 @@ export const SprintTrackingScreen: React.FC = () => {
     try {
       const settingsResponse = await api.get<SprintSettings | null>('/sprint/settings');
       setSettings(settingsResponse.data);
+      setError(null);
       if (!settingsResponse.data) {
         setStats(null);
         setTasks([]);
@@ -234,11 +261,13 @@ export const SprintTrackingScreen: React.FC = () => {
       setLogs(logsResponse.data);
       setReviews(reviewsResponse.data);
     } catch (requestError) {
-      setError(apiErrorMessage(requestError, 'Could not load sprint data.'));
+      const message = apiErrorMessage(requestError, 'Could not load sprint data.');
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     void load();
@@ -255,12 +284,12 @@ export const SprintTrackingScreen: React.FC = () => {
         }
       })
       .catch((requestError: unknown) => {
-        if (!cancelled) setError(apiErrorMessage(requestError, 'Could not load sprint analytics.'));
+        if (!cancelled) toast.error(apiErrorMessage(requestError, 'Could not load sprint analytics.'));
       });
     return () => {
       cancelled = true;
     };
-  }, [period, section, settings]);
+  }, [period, section, settings, toast]);
 
   useEffect(() => {
     if (reviewWeek == null) return;
@@ -271,13 +300,13 @@ export const SprintTrackingScreen: React.FC = () => {
       })
       .catch((requestError: unknown) => {
         if (!cancelled) {
-          setError(apiErrorMessage(requestError, 'Could not load weekly review statistics.'));
+          toast.error(apiErrorMessage(requestError, 'Could not load weekly review statistics.'));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [reviewWeek]);
+  }, [reviewWeek, toast]);
 
   const filteredTasks = useMemo(() => tasks.filter((task) => {
     const matchesSearch = task.title.toLowerCase().includes(taskSearch.toLowerCase());
@@ -297,6 +326,7 @@ export const SprintTrackingScreen: React.FC = () => {
     (log) =>
       log.accomplishments ||
       log.obstacles ||
+      log.focusVision ||
       log.sleepHours != null ||
       log.focusHours != null ||
       log.taskCounts.total > 0,
@@ -311,18 +341,23 @@ export const SprintTrackingScreen: React.FC = () => {
   const selectedDayTasks = selectedLog
     ? tasks.filter((task) => task.deadline === selectedLog.date)
     : [];
+  const currentViewedTask = viewingTask
+    ? tasks.find((task) => task._id === viewingTask._id) ?? viewingTask
+    : null;
+  const yesterdayTasks = stats
+    ? tasks.filter((task) => task.deadline === previousDate(stats.today) && task.status !== 'done')
+    : [];
+  const overdueTasks = stats ? tasks.filter((task) => isOverdue(task, stats.today)) : [];
 
   const request = async (action: () => Promise<unknown>, successMessage?: string) => {
     setSaving(true);
-    setError(null);
-    setNotice(null);
     try {
       await action();
-      if (successMessage) setNotice(successMessage);
+      if (successMessage) toast.success(successMessage);
       await load();
       return true;
     } catch (requestError) {
-      setError(apiErrorMessage(requestError, 'The change could not be saved.'));
+      toast.error(apiErrorMessage(requestError, 'The change could not be saved.'));
       return false;
     } finally {
       setSaving(false);
@@ -333,7 +368,7 @@ export const SprintTrackingScreen: React.FC = () => {
     event.preventDefault();
     const names = starterTasks.split('\n').map((task) => task.trim()).filter(Boolean);
     if (names.length > 100 || names.some((task) => task.length > 120)) {
-      setError('Add up to 100 starter tasks, each no longer than 120 characters.');
+      toast.error('Add up to 100 starter tasks, each no longer than 120 characters.');
       return;
     }
     const complete = await request(
@@ -356,13 +391,38 @@ export const SprintTrackingScreen: React.FC = () => {
     );
   };
 
+  const startNewSprint = async () => {
+    if (!window.confirm('Start a new sprint? This permanently removes the current sprint’s tasks, daily logs, and reviews.')) {
+      return;
+    }
+    const complete = await request(
+      () => api.delete('/sprint/settings'),
+      'Current sprint removed. Set up your new sprint below.',
+    );
+    if (complete) {
+      setSetupDate(todayDateOnly());
+      setSetupDays(40);
+      setSetupWeekends([5, 6]);
+      setStarterTasks('');
+      setSection('overview');
+    }
+  };
+
   const saveTask = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!taskForm) return;
-    const { repeatUntil, _id, ...fields } = taskForm;
+    const { repeatUntil, _id } = taskForm;
+    const fields = {
+      title: taskForm.title,
+      status: taskForm.status,
+      priority: taskForm.priority,
+      deadline: taskForm.deadline,
+      hours: taskForm.hours,
+      notes: taskForm.notes,
+    };
     if (!_id && repeatUntil) {
       if (repeatUntil < fields.deadline) {
-        setError('The final repeat date must be on or after the first date.');
+        toast.error('The final repeat date must be on or after the first date.');
         return;
       }
       const dates: string[] = [];
@@ -373,7 +433,7 @@ export const SprintTrackingScreen: React.FC = () => {
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
       if (dates.length > 90) {
-        setError('A repeated task can span at most 90 days.');
+        toast.error('A repeated task can span at most 90 days.');
         return;
       }
       const complete = await request(
@@ -395,9 +455,31 @@ export const SprintTrackingScreen: React.FC = () => {
   const changeTaskStatus = async (task: SprintTask, direction = 1) => {
     const next = statuses[statuses.indexOf(task.status) + direction];
     if (!next) return;
+    await moveTaskToStatus(task, next);
+  };
+
+  const moveTaskToStatus = async (task: SprintTask, status: TaskStatus) => {
+    if (task.status === status) return;
     await request(
-      () => api.patch(`/sprint/tasks/${task._id}`, { status: next }),
-      `Task marked ${statusLabels[next].toLowerCase()}.`,
+      () => api.patch(`/sprint/tasks/${task._id}`, { status }),
+      `Task moved to ${statusLabels[status].toLowerCase()}.`,
+    );
+  };
+
+  const handleTaskDrop = (event: React.DragEvent<HTMLElement>, status: TaskStatus) => {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData('text/plain') || draggedTaskId;
+    setDraggedTaskId(null);
+    setDropTargetStatus(null);
+    const task = tasks.find((item) => item._id === taskId);
+    if (task) void moveTaskToStatus(task, status);
+  };
+
+  const moveTaskToToday = async (task: SprintTask) => {
+    if (!stats) return;
+    await request(
+      () => api.patch(`/sprint/tasks/${task._id}`, { deadline: stats.today }),
+      `"${task.title}" moved to today.`,
     );
   };
 
@@ -425,6 +507,7 @@ export const SprintTrackingScreen: React.FC = () => {
       () => api.put(`/sprint/logs/${selectedLog.day}`, {
         sleepHours: selectedLog.sleepHours,
         focusHours: selectedLog.focusHours,
+        focusVision: selectedLog.focusVision,
         accomplishments: selectedLog.accomplishments,
         obstacles: selectedLog.obstacles,
       }),
@@ -479,14 +562,6 @@ export const SprintTrackingScreen: React.FC = () => {
         )}
       </header>
 
-      {error && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
-          <span>{error}</span>
-          <button type="button" className={secondaryButtonClass} onClick={() => { setError(null); setLoading(true); void load(); }}>Retry</button>
-        </div>
-      )}
-      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">{notice}</div>}
-
       {settings && (
         <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" aria-label="Sprint sections">
           {sections.map((item) => {
@@ -511,6 +586,15 @@ export const SprintTrackingScreen: React.FC = () => {
       )}
 
       {!settings ? (
+        error ? (
+          <section className={`${panelClass} mx-auto max-w-3xl text-center`}>
+            <h2 className="font-semibold text-slate-900 dark:text-white">Sprint data is unavailable</h2>
+            <p className="mt-2 text-sm text-slate-500">Retry loading before creating or changing a sprint.</p>
+            <button type="button" className={`${buttonClass} mt-4`} onClick={() => { setError(null); setLoading(true); void load(); }}>
+              Retry
+            </button>
+          </section>
+        ) : (
         <section className={`${panelClass} mx-auto max-w-3xl`}>
           <div className="mb-6 flex items-start gap-4">
             <span className="rounded-2xl bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300"><Target className="h-6 w-6" /></span>
@@ -535,6 +619,7 @@ export const SprintTrackingScreen: React.FC = () => {
             <button className={buttonClass} disabled={saving}><CalendarDays className="h-4 w-4" />{saving ? 'Setting up…' : 'Create sprint'}</button>
           </form>
         </section>
+        )
       ) : (
         <>
           {section === 'overview' && stats && (
@@ -575,14 +660,135 @@ export const SprintTrackingScreen: React.FC = () => {
                 <div className="grid gap-3 md:grid-cols-3">
                   {statuses.map((status) => {
                     const list = stats.todayTasks.filter((task) => task.status === status);
-                    return <div key={status} className="min-h-32 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60"><div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">{statusLabels[status]}<span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-900">{list.length}</span></div>{list.map((task) => <div key={task._id} className="mb-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"><button type="button" className="w-full text-left text-sm font-medium text-slate-800 dark:text-slate-100" onClick={() => setTaskForm({ ...task, repeatUntil: '' })}>{task.title}</button><div className="mt-2 flex items-center justify-between text-xs text-slate-500"><span>{task.hours}h · {task.priority} priority</span><div className="flex gap-1"><button type="button" aria-label={`Move ${task.title} backward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'todo' || saving} onClick={() => void changeTaskStatus(task, -1)}><ChevronLeft className="h-4 w-4" /></button><button type="button" aria-label={`Move ${task.title} forward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'done' || saving} onClick={() => void changeTaskStatus(task)}><ChevronRight className="h-4 w-4" /></button></div></div></div>)}</div>;
+                    return (
+                      <div
+                        key={status}
+                        className={`min-h-32 rounded-xl p-3 transition-colors ${dropTargetStatus === status ? 'bg-indigo-100 ring-2 ring-indigo-400 dark:bg-indigo-950/50' : 'bg-slate-50 dark:bg-slate-950/60'}`}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDragEnter={() => setDropTargetStatus(status)}
+                        onDragLeave={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                            setDropTargetStatus(null);
+                          }
+                        }}
+                        onDrop={(event) => handleTaskDrop(event, status)}
+                        aria-label={`Drop tasks in ${statusLabels[status]}`}
+                      >
+                        <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
+                          {statusLabels[status]}
+                          <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-900">{list.length}</span>
+                        </div>
+                        {list.map((task) => (
+                          <article
+                            key={task._id}
+                            draggable={!saving}
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData('text/plain', task._id);
+                              event.dataTransfer.effectAllowed = 'move';
+                              setDraggedTaskId(task._id);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedTaskId(null);
+                              setDropTargetStatus(null);
+                            }}
+                            className={`mb-2 rounded-xl border border-slate-200 bg-white p-3 transition dark:border-slate-800 dark:bg-slate-900 ${draggedTaskId === task._id ? 'opacity-50' : ''}`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-slate-400" aria-hidden="true" />
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 text-left text-sm font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100"
+                                onClick={() => setViewingTask(task)}
+                              >
+                                {task.title}
+                              </button>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
+                              <span>{task.hours}h · {task.priority} priority</span>
+                              <div className="flex gap-1">
+                                <button type="button" aria-label={`Move ${task.title} backward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'todo' || saving} onClick={() => void changeTaskStatus(task, -1)}><ChevronLeft className="h-4 w-4" /></button>
+                                <button type="button" aria-label={`Move ${task.title} forward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'done' || saving} onClick={() => void changeTaskStatus(task)}><ChevronRight className="h-4 w-4" /></button>
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    );
                   })}
                 </div>
                 {!stats.todayTasks.length && <p className="mt-4 text-center text-sm text-slate-500">No tasks scheduled for today yet.</p>}
               </section>
 
+              {yesterdayTasks.length > 0 && (
+                <section className={`${panelClass} border border-amber-200 dark:border-amber-900/60`}>
+                  <div className="mb-4">
+                    <h3 className="font-semibold text-slate-900 dark:text-white">Unfinished from yesterday</h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {yesterdayTasks.length} task{yesterdayTasks.length === 1 ? ' needs' : 's need'} attention from {formatDay(previousDate(stats.today))}.
+                    </p>
+                  </div>
+                  <ul className="space-y-2">
+                    {yesterdayTasks.map((task) => (
+                      <li key={task._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                        <div className="min-w-0 flex-1">
+                          <button type="button" className="block max-w-full truncate text-left text-sm font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setViewingTask(task)}>
+                            {task.title}
+                          </button>
+                          <p className="mt-1 text-xs text-slate-500">{task.hours}h estimated · {statusLabels[task.status]}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" className={secondaryButtonClass} onClick={() => void moveTaskToToday(task)} disabled={saving}>
+                            Move to today
+                          </button>
+                          <button type="button" className="rounded-xl px-3.5 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30" onClick={() => void request(() => api.patch(`/sprint/tasks/${task._id}`, { status: 'done' }), `"${task.title}" marked done.`)} disabled={saving}>
+                            Mark done
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {overdueTasks.length > 0 && (
+                <section
+                  className="rounded-2xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900/60 dark:bg-rose-950/25"
+                  role="status"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400" />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-rose-800 dark:text-rose-200">
+                        {overdueTasks.length} overdue task{overdueTasks.length === 1 ? '' : 's'}
+                      </h3>
+                      <p className="mt-1 text-sm text-rose-700 dark:text-rose-300">
+                        These incomplete tasks are past their scheduled date. Review them in the task board.
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {overdueTasks.slice(0, 3).map((task) => (
+                          <li key={task._id} className="flex flex-wrap items-center gap-x-2 text-xs text-rose-700 dark:text-rose-300">
+                            <button type="button" className="max-w-full truncate font-medium underline decoration-rose-300 underline-offset-2" onClick={() => setViewingTask(task)}>
+                              {task.title}
+                            </button>
+                            <span>· Due {formatDay(task.deadline)}</span>
+                          </li>
+                        ))}
+                        {overdueTasks.length > 3 && (
+                          <li className="text-xs text-rose-700 dark:text-rose-300">
+                            and {overdueTasks.length - 3} more
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                    <button type="button" className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 dark:text-rose-200 dark:hover:bg-rose-900/40" onClick={() => setSection('tasks')}>
+                      View tasks
+                    </button>
+                  </div>
+                </section>
+              )}
+
               <div className="grid gap-5 lg:grid-cols-2">
-                <section className={panelClass}><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold text-slate-900 dark:text-white">Daily check-in</h3><p className="mt-1 text-xs text-slate-500">{stats.dailyLog ? `Day ${stats.dailyLog.day}` : 'Keep a note of how today went.'}</p></div><button type="button" className={secondaryButtonClass} onClick={() => { const log = logs.find((item) => item.date === stats.today); if (log) setSelectedLog(log); else setSection('log'); }}>Open log</button></div><p className="min-h-10 text-sm text-slate-600 dark:text-slate-300">{stats.dailyLog?.accomplishments || 'Record your wins, focus time, and anything that got in the way.'}</p><div className="mt-3 flex gap-5 border-t border-slate-100 pt-3 text-xs dark:border-slate-800"><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.sleepHours ?? '–'}h</b><span className="ml-1 text-slate-500">sleep</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.focusHours ?? '–'}h</b><span className="ml-1 text-slate-500">focus</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyScore}%</b><span className="ml-1 text-slate-500">tasks done</span></span></div></section>
+                <section className={panelClass}><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold text-slate-900 dark:text-white">Daily check-in</h3><p className="mt-1 text-xs text-slate-500">{stats.dailyLog ? `Day ${stats.dailyLog.day}` : 'Keep a note of how today went.'}</p></div><button type="button" className={secondaryButtonClass} onClick={() => { const log = logs.find((item) => item.date === stats.today); if (log) setSelectedLog(log); else setSection('log'); }}>Open log</button></div>{stats.dailyLog?.focusVision && <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-500/20 dark:bg-indigo-500/10"><p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Today’s focus / vision</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{stats.dailyLog.focusVision}</p></div>}<p className="min-h-10 text-sm text-slate-600 dark:text-slate-300">{stats.dailyLog?.accomplishments || 'Record your wins, focus time, and anything that got in the way.'}</p><div className="mt-3 flex gap-5 border-t border-slate-100 pt-3 text-xs dark:border-slate-800"><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.sleepHours ?? '–'}h</b><span className="ml-1 text-slate-500">sleep</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.focusHours ?? '–'}h</b><span className="ml-1 text-slate-500">focus</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyScore}%</b><span className="ml-1 text-slate-500">tasks done</span></span></div></section>
                 <section className={panelClass}><h3 className="font-semibold text-slate-900 dark:text-white">Coming up</h3>{stats.upcoming.length ? <ul className="mt-2 divide-y divide-slate-100 dark:divide-slate-800">{stats.upcoming.map((task) => <li key={task._id} className="flex items-center justify-between gap-3 py-2.5"><span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{task.title}</span><span className="shrink-0 text-xs text-slate-500">{formatDay(task.deadline)} · {task.hours}h</span></li>)}</ul> : <p className="mt-3 text-sm text-slate-500">Nothing scheduled ahead. Add a task to plan your next step.</p>}</section>
               </div>
             </div>
@@ -590,7 +796,7 @@ export const SprintTrackingScreen: React.FC = () => {
 
           {section === 'tasks' && (
             <section className={`${panelClass} space-y-4`}>
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900 dark:text-white">Sprint tasks</h2><p className="mt-1 text-xs text-slate-500">{filteredTasks.length} matching task{filteredTasks.length === 1 ? '' : 's'}</p></div><button type="button" className={buttonClass} onClick={() => setTaskForm(taskBlank(stats?.today))}><Plus className="h-4 w-4" /> New task</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900 dark:text-white">Sprint tasks</h2><p className="mt-1 text-xs text-slate-500">{filteredTasks.length} matching task{filteredTasks.length === 1 ? '' : 's'}</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-950" role="group" aria-label="Task view"><button type="button" aria-pressed={taskLayout === 'board'} className={`rounded-lg px-3 py-2 text-sm font-medium ${taskLayout === 'board' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`} onClick={() => setTaskLayout('board')}>Board</button><button type="button" aria-pressed={taskLayout === 'list'} className={`rounded-lg px-3 py-2 text-sm font-medium ${taskLayout === 'list' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`} onClick={() => setTaskLayout('list')}>List</button></div><button type="button" className={buttonClass} onClick={() => setTaskForm(taskBlank(stats?.today))}><Plus className="h-4 w-4" /> New task</button></div></div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 <input aria-label="Search tasks" className={inputClass} type="search" placeholder="Search tasks" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} />
                 <select aria-label="Filter by status" className={inputClass} value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>
@@ -600,12 +806,98 @@ export const SprintTrackingScreen: React.FC = () => {
                 {(taskSearch || taskStatusFilter || taskPriorityFilter || taskFrom || taskTo) && <button type="button" className={secondaryButtonClass} onClick={() => { setTaskSearch(''); setTaskStatusFilter(''); setTaskPriorityFilter(''); setTaskFrom(''); setTaskTo(''); }}>Clear filters</button>}
               </div>
               {selectedTaskIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800"><span className="text-sm text-slate-600 dark:text-slate-300">{selectedTaskIds.length} selected</span><div className="flex gap-2"><button type="button" className="rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => void bulkDeleteTasks()}><Trash2 className="mr-1 inline h-4 w-4" />Delete selected</button><button type="button" className={secondaryButtonClass} onClick={() => setSelectedTaskIds([])}>Clear selection</button></div></div>}
+              {overdueTasks.length > 0 && !taskFrom && !taskTo && !taskStatusFilter && (
+                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{overdueTasks.length} incomplete task{overdueTasks.length === 1 ? ' is' : 's are'} past the due date. Overdue tasks are marked below.</p>
+                </div>
+              )}
+              {taskLayout === 'board' ? (
+                <div className="grid gap-4 xl:grid-cols-3">
+                  {statuses.map((status) => {
+                    const columnTasks = filteredTasks.filter((task) => task.status === status);
+                    return (
+                      <section
+                        key={status}
+                        aria-label={`${statusLabels[status]} tasks`}
+                        className={`min-h-64 rounded-2xl border p-3 transition-colors ${dropTargetStatus === status ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/30' : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40'}`}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDragEnter={() => setDropTargetStatus(status)}
+                        onDragLeave={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                            setDropTargetStatus(null);
+                          }
+                        }}
+                        onDrop={(event) => handleTaskDrop(event, status)}
+                      >
+                        <header className="mb-3 flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{statusLabels[status]}</h3>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-900">{columnTasks.length}</span>
+                        </header>
+                        <div className="space-y-2">
+                          {columnTasks.map((task) => (
+                            <article
+                              key={task._id}
+                              draggable={!saving}
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData('text/plain', task._id);
+                                event.dataTransfer.effectAllowed = 'move';
+                                setDraggedTaskId(task._id);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedTaskId(null);
+                                setDropTargetStatus(null);
+                              }}
+                              className={`mb-2 rounded-xl border bg-white p-3 transition dark:bg-slate-900 ${isOverdue(task, stats?.today ?? todayDateOnly()) ? 'border-rose-300 dark:border-rose-900' : 'border-slate-200 dark:border-slate-800'} ${draggedTaskId === task._id ? 'opacity-50' : ''}`}
+                            >
+                              <div className="flex items-start gap-2">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select ${task.title}`}
+                                  checked={selectedTaskIds.includes(task._id)}
+                                  onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="mt-1"
+                                />
+                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-slate-400" aria-hidden="true" />
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 text-left text-sm font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100"
+                                  onClick={() => setViewingTask(task)}
+                                >
+                                  {task.title}
+                                </button>
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                                <span>{task.hours}h · {task.priority} priority</span>
+                                {isOverdue(task, stats?.today ?? todayDateOnly()) && (
+                                  <span className="inline-flex items-center gap-1 font-semibold text-rose-600 dark:text-rose-400">
+                                    <AlertTriangle className="h-3.5 w-3.5" />
+                                    Overdue · {formatDay(task.deadline)}
+                                  </span>
+                                )}
+                                <div className="flex gap-1">
+                                  <button type="button" aria-label={`Move ${task.title} backward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'todo' || saving} onClick={() => void changeTaskStatus(task, -1)}><ChevronLeft className="h-4 w-4" /></button>
+                                  <button type="button" aria-label={`Move ${task.title} forward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'done' || saving} onClick={() => void changeTaskStatus(task)}><ChevronRight className="h-4 w-4" /></button>
+                                </div>
+                              </div>
+                              {task.deadline && <p className="mt-1 text-[11px] text-slate-400">{formatDay(task.deadline)}</p>}
+                            </article>
+                          ))}
+                          {!columnTasks.length && <p className="rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-500 dark:border-slate-700">Drop a task here</p>}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-left text-sm">
-                  <thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium"><input type="checkbox" aria-label="Select all visible tasks" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task._id))} onChange={(event) => setSelectedTaskIds(event.target.checked ? filteredTasks.map((task) => task._id) : [])} /></th><th className="px-3 py-2 font-medium">Task</th><th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Hours</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th></tr></thead>
-                  <tbody>{filteredTasks.map((task) => <tr key={task._id} className="border-t border-slate-100 dark:border-slate-800"><td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${task.title}`} checked={selectedTaskIds.includes(task._id)} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))} /></td><td className="max-w-64 px-3 py-3"><button type="button" className="truncate text-left font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setTaskForm({ ...task, repeatUntil: '' })}>{task.title}</button>{task.notes && <p className="mt-1 truncate text-xs text-slate-500">{task.notes}</p>}</td><td className="px-3 py-3 text-slate-500">{task.deadline ? formatDay(task.deadline) : '—'}</td><td className="px-3 py-3 text-slate-500">{task.hours}h</td><td className="px-3 py-3 capitalize text-slate-500">{task.priority}</td><td className="px-3 py-3"><button type="button" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={() => void changeTaskStatus(task)}>{statusLabels[task.status]}</button></td><td className="px-3 py-3"><div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Edit ${task.title}`} onClick={() => setTaskForm({ ...task, repeatUntil: '' })}><Activity className="h-4 w-4" /></button><button type="button" className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 className="h-4 w-4" /></button></div></td></tr>)}</tbody>
+                  <thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium"><input type="checkbox" aria-label="Select all visible tasks" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task._id))} onChange={(event) => setSelectedTaskIds(event.target.checked ? filteredTasks.map((task) => task._id) : [])} /></th><th className="px-3 py-2 font-medium">Task</th><th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Estimate</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th></tr></thead>
+                  <tbody>{filteredTasks.map((task) => <tr key={task._id} className={`border-t ${isOverdue(task, stats?.today ?? todayDateOnly()) ? 'border-rose-200 bg-rose-50/60 dark:border-rose-950 dark:bg-rose-950/10' : 'border-slate-100 dark:border-slate-800'}`}><td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${task.title}`} checked={selectedTaskIds.includes(task._id)} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))} /></td><td className="max-w-64 px-3 py-3"><button type="button" className="truncate text-left font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setViewingTask(task)}>{task.title}</button>{task.notes && <p className="mt-1 truncate text-xs text-slate-500">{task.notes}</p>}</td><td className={`px-3 py-3 ${isOverdue(task, stats?.today ?? todayDateOnly()) ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500'}`}>{task.deadline ? <span className="inline-flex items-center gap-1.5">{isOverdue(task, stats?.today ?? todayDateOnly()) && <AlertTriangle className="h-3.5 w-3.5" />}{formatDay(task.deadline)}{isOverdue(task, stats?.today ?? todayDateOnly()) && <span className="text-[10px] uppercase">Overdue</span>}</span> : '—'}</td><td className="px-3 py-3 text-slate-500">{task.hours}h</td><td className="px-3 py-3 capitalize text-slate-500">{task.priority}</td><td className="px-3 py-3"><button type="button" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={() => void changeTaskStatus(task)}>{statusLabels[task.status]}</button></td><td className="px-3 py-3"><div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Edit ${task.title}`} onClick={() => setTaskForm(taskEditForm(task))}><Activity className="h-4 w-4" /></button><button type="button" className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 className="h-4 w-4" /></button></div></td></tr>)}</tbody>
                 </table>
               </div>
+              )}
               {!filteredTasks.length && <p className="py-8 text-center text-sm text-slate-500">No tasks match. Clear filters or add a task.</p>}
             </section>
           )}
@@ -627,7 +919,7 @@ export const SprintTrackingScreen: React.FC = () => {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[{ label: 'Days with notes or tasks', value: loggedDays }, { label: 'Average completion', value: `${logAverage}%` }, { label: 'Tasks completed', value: logTasksDone }, { label: 'Days in sprint', value: logs.length }].map((metric) => <article key={metric.label} className={panelClass}><p className="text-xs text-slate-500">{metric.label}</p><p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{metric.value}</p></article>)}</div>
             <section className={`${panelClass} space-y-4`}>
               <div><h2 className="font-semibold text-slate-900 dark:text-white">Daily log</h2><p className="mt-1 text-xs text-slate-500">Click a sprint day to capture what happened, sleep, and focused hours.</p></div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium">Day</th><th className="px-3 py-2 font-medium">Completion</th><th className="px-3 py-2 font-medium">Tasks</th><th className="px-3 py-2 font-medium">Sleep</th><th className="px-3 py-2 font-medium">Focus</th><th className="px-3 py-2 font-medium">Daily summary</th></tr></thead><tbody>{logs.map((log) => <tr key={log._id} className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 ${log.date === stats?.today ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}`} onClick={() => setSelectedLog({ ...log })}><td className="px-3 py-3"><b>Day {log.day}</b><span className="ml-2 text-xs text-slate-500">{formatDay(log.date)}{log.isWeekend ? ' · Rest' : ''}</span></td><td className="px-3 py-3"><span className="font-medium">{log.score}%</span><div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full bg-indigo-500" style={{ width: `${log.score}%` }} /></div></td><td className="px-3 py-3 text-slate-500">{log.taskCounts.done}/{log.taskCounts.total}</td><td className="px-3 py-3 text-slate-500">{log.sleepHours ?? '—'}</td><td className="px-3 py-3 text-slate-500">{log.focusHours ?? '—'}</td><td className="max-w-56 truncate px-3 py-3 text-slate-500">{log.accomplishments || '—'}</td></tr>)}</tbody></table></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium">Day</th><th className="px-3 py-2 font-medium">Completion</th><th className="px-3 py-2 font-medium">Tasks</th><th className="px-3 py-2 font-medium">Sleep</th><th className="px-3 py-2 font-medium">Focus</th><th className="px-3 py-2 font-medium">Daily focus / vision</th><th className="px-3 py-2 font-medium">Daily summary</th></tr></thead><tbody>{logs.map((log) => <tr key={log._id} className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 ${log.date === stats?.today ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}`} onClick={() => setSelectedLog({ ...log })}><td className="px-3 py-3"><b>Day {log.day}</b><span className="ml-2 text-xs text-slate-500">{formatDay(log.date)}{log.isWeekend ? ' · Rest' : ''}</span></td><td className="px-3 py-3"><span className="font-medium">{log.score}%</span><div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full bg-indigo-500" style={{ width: `${log.score}%` }} /></div></td><td className="px-3 py-3 text-slate-500">{log.taskCounts.done}/{log.taskCounts.total}</td><td className="px-3 py-3 text-slate-500">{log.sleepHours ?? '—'}</td><td className="px-3 py-3 text-slate-500">{log.focusHours ?? '—'}</td><td className="max-w-56 truncate px-3 py-3 text-slate-500">{log.focusVision || '—'}</td><td className="max-w-56 truncate px-3 py-3 text-slate-500">{log.accomplishments || '—'}</td></tr>)}</tbody></table></div>
             </section>
             </div>
           )}
@@ -644,9 +936,79 @@ export const SprintTrackingScreen: React.FC = () => {
               <h2 className="font-semibold text-slate-900 dark:text-white">Sprint settings</h2><p className="mt-1 text-sm text-slate-500">This sprint began {settings && formatDay(settings.startDate)} and currently runs for {settings?.totalDays} days.</p>
               <form onSubmit={extendSprint} className="mt-5 flex flex-wrap items-end gap-3"><label className="max-w-48 flex-1 space-y-1.5 text-sm font-medium">Add days<input className={inputClass} type="number" min="1" max="365" value={extendDays} onChange={(event) => setExtendDays(Number(event.target.value))} /></label><button className={buttonClass} disabled={saving}><Plus className="h-4 w-4" /> Extend sprint</button></form>
               <div className="mt-5 border-t border-slate-100 pt-4 text-sm dark:border-slate-800"><p><span className="text-slate-500">Start date</span><span className="ml-3 font-medium text-slate-800 dark:text-slate-100">{settings && formatDay(settings.startDate)}</span></p><p className="mt-2"><span className="text-slate-500">Rest days</span><span className="ml-3 font-medium text-slate-800 dark:text-slate-100">{settings?.weekendDays.map((day) => weekdays[day].slice(0, 3)).join(', ') || 'None'}</span></p></div>
+              <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Start over</h3>
+                <p className="mt-1 text-xs text-slate-500">Remove this sprint and its tasks, daily logs, and reviews so you can set up a new sprint.</p>
+                <button type="button" className="mt-3 inline-flex items-center gap-2 rounded-xl border border-rose-200 px-3.5 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30" onClick={() => void startNewSprint()} disabled={saving}><Trash2 className="h-4 w-4" /> Start a new sprint</button>
+              </div>
             </section>
           )}
         </>
+      )}
+
+      {currentViewedTask && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setViewingTask(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sprint-task-details-title"
+            className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">Sprint task</p>
+                <h2 id="sprint-task-details-title" className="mt-1 break-words text-lg font-semibold text-slate-900 dark:text-white">
+                  {currentViewedTask.title}
+                </h2>
+              </div>
+              <button type="button" aria-label="Close task details" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setViewingTask(null)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
+                <p className="text-xs text-slate-500">Status</p>
+                <select
+                  aria-label="Task status"
+                  className={`${inputClass} mt-1`}
+                  value={currentViewedTask.status}
+                  disabled={saving}
+                  onChange={(event) => void moveTaskToStatus(currentViewedTask, event.target.value as TaskStatus)}
+                >
+                  {statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
+                </select>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
+                <p className="text-xs text-slate-500">Priority</p>
+                <p className="mt-1 text-sm font-medium capitalize text-slate-900 dark:text-white">{currentViewedTask.priority}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
+                <p className="text-xs text-slate-500">Scheduled date</p>
+                <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">{currentViewedTask.deadline ? formatDay(currentViewedTask.deadline) : 'No date'}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
+                <p className="text-xs text-slate-500">Estimated time</p>
+                <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">{currentViewedTask.hours} hours</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</h3>
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700 dark:text-slate-300">{currentViewedTask.notes || 'No notes added.'}</p>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" className={secondaryButtonClass} onClick={() => setViewingTask(null)}>Close</button>
+              <button type="button" className={buttonClass} onClick={() => { setTaskForm(taskEditForm(currentViewedTask)); setViewingTask(null); }}>
+                <Activity className="h-4 w-4" /> Edit task
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {taskForm && (
@@ -655,7 +1017,7 @@ export const SprintTrackingScreen: React.FC = () => {
             <div className="mb-5 flex items-center justify-between"><h2 id="sprint-task-title" className="font-semibold text-slate-900 dark:text-white">{taskForm._id ? 'Edit task' : 'New sprint task'}</h2><button type="button" className="text-sm text-slate-500" onClick={() => setTaskForm(null)}>Close</button></div>
             <form onSubmit={saveTask} className="space-y-4">
               <label className="block space-y-1.5 text-sm font-medium">Task title<input className={inputClass} required maxLength={120} autoFocus value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></label>
-              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Scheduled date<input className={inputClass} type="date" required value={taskForm.deadline} onChange={(event) => setTaskForm({ ...taskForm, deadline: event.target.value })} /></label><label className="space-y-1.5 text-sm font-medium">Estimated hours<input className={inputClass} type="number" min="0" max="24" step="0.25" value={taskForm.hours} onChange={(event) => setTaskForm({ ...taskForm, hours: Number(event.target.value) })} /></label></div>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Scheduled date<input className={inputClass} type="date" required value={taskForm.deadline} onChange={(event) => setTaskForm({ ...taskForm, deadline: event.target.value })} /></label><label className="space-y-1.5 text-sm font-medium">Estimated time (hours)<input className={inputClass} type="number" min="0" max="24" step="0.25" value={taskForm.hours} onChange={(event) => setTaskForm({ ...taskForm, hours: Number(event.target.value) })} /></label></div>
               <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Status<select className={inputClass} value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label><label className="space-y-1.5 text-sm font-medium">Priority<select className={inputClass} value={taskForm.priority} onChange={(event) => setTaskForm({ ...taskForm, priority: event.target.value as TaskPriority })}>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label></div>
               {!taskForm._id && <label className="block space-y-1.5 text-sm font-medium">Repeat daily until <span className="font-normal text-slate-400">(optional, up to 90 days)</span><input className={inputClass} type="date" min={taskForm.deadline} value={taskForm.repeatUntil} onChange={(event) => setTaskForm({ ...taskForm, repeatUntil: event.target.value })} /></label>}
               <label className="block space-y-1.5 text-sm font-medium">Notes<textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} value={taskForm.notes} onChange={(event) => setTaskForm({ ...taskForm, notes: event.target.value })} /></label>
@@ -670,7 +1032,7 @@ export const SprintTrackingScreen: React.FC = () => {
           <section role="dialog" aria-modal="true" aria-labelledby="sprint-log-title" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-5"><h2 id="sprint-log-title" className="font-semibold text-slate-900 dark:text-white">Day {selectedLog.day} · {formatDay(selectedLog.date)}</h2><p className="mt-1 text-xs text-slate-500">{selectedLog.isWeekend ? 'Rest day' : `${selectedLog.taskCounts.done}/${selectedLog.taskCounts.total} tasks complete`}</p></div>
             <section className="mb-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-950/60"><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Tasks for this day</h3>{selectedDayTasks.length ? <ul className="mt-2 space-y-2">{selectedDayTasks.map((task) => <li key={task._id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate text-slate-700 dark:text-slate-300">{task.title}<small className="ml-2 text-xs text-slate-400">{task.hours}h estimated</small></span><span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{statusLabels[task.status]}</span></li>)}</ul> : <p className="mt-2 text-xs text-slate-500">No tasks scheduled.</p>}</section>
-            <form onSubmit={saveLog} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{(['sleepHours', 'focusHours'] as const).map((key) => <label key={key} className="space-y-1.5 text-sm font-medium">{key === 'sleepHours' ? 'Sleep (hours)' : 'Focused hours'}<input className={inputClass} type="number" min="0" max="24" step="0.25" value={selectedLog[key] ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, [key]: event.target.value === '' ? null : Number(event.target.value) })} /></label>)}</div><label className="block space-y-1.5 text-sm font-medium">What did you accomplish?<textarea className={`${inputClass} min-h-24 resize-y`} value={selectedLog.accomplishments} onChange={(event) => setSelectedLog({ ...selectedLog, accomplishments: event.target.value })} /></label><label className="block space-y-1.5 text-sm font-medium">What got in the way?<textarea className={`${inputClass} min-h-24 resize-y`} value={selectedLog.obstacles} onChange={(event) => setSelectedLog({ ...selectedLog, obstacles: event.target.value })} /></label><div className="flex justify-end gap-2"><button type="button" className={secondaryButtonClass} onClick={() => setSelectedLog(null)}>Cancel</button><button className={buttonClass} disabled={saving}><Save className="h-4 w-4" /> Save day</button></div></form>
+            <form onSubmit={saveLog} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{(['sleepHours', 'focusHours'] as const).map((key) => <label key={key} className="space-y-1.5 text-sm font-medium">{key === 'sleepHours' ? 'Sleep (hours)' : 'Focused hours'}<input className={inputClass} type="number" min="0" max="24" step="0.25" value={selectedLog[key] ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, [key]: event.target.value === '' ? null : Number(event.target.value) })} /></label>)}</div><label className="block space-y-1.5 text-sm font-medium">Daily focus / vision<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What is the one thing you want to focus on or make progress on today?" value={selectedLog.focusVision ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, focusVision: event.target.value })} /></label><label className="block space-y-1.5 text-sm font-medium">What did you accomplish?<textarea className={`${inputClass} min-h-24 resize-y`} value={selectedLog.accomplishments} onChange={(event) => setSelectedLog({ ...selectedLog, accomplishments: event.target.value })} /></label><label className="block space-y-1.5 text-sm font-medium">What got in the way?<textarea className={`${inputClass} min-h-24 resize-y`} value={selectedLog.obstacles} onChange={(event) => setSelectedLog({ ...selectedLog, obstacles: event.target.value })} /></label><div className="flex justify-end gap-2"><button type="button" className={secondaryButtonClass} onClick={() => setSelectedLog(null)}>Cancel</button><button className={buttonClass} disabled={saving}><Save className="h-4 w-4" /> Save day</button></div></form>
           </section>
         </div>
       )}

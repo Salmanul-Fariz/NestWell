@@ -115,6 +115,17 @@ export class SprintService {
     });
   }
 
+  async removeSprint(userId: string) {
+    const owner = this.owner(userId);
+    await Promise.all([
+      this.taskModel.deleteMany({ userId: owner }).exec(),
+      this.dayLogModel.deleteMany({ userId: owner }).exec(),
+      this.reviewModel.deleteMany({ userId: owner }).exec(),
+    ]);
+    await this.settingsModel.deleteOne({ userId: owner }).exec();
+    return { success: true };
+  }
+
   async extend(userId: string, days: number) {
     const owner = this.owner(userId);
     const settings = await this.settingsModel.findOne({ userId: owner }).exec();
@@ -358,6 +369,7 @@ export class SprintService {
         ? {
             day: current.day,
             date: current.date,
+            focusVision: current.focusVision || '',
             accomplishments: current.accomplishments || '',
             obstacles: current.obstacles || '',
             sleepHours: current.sleepHours ?? null,
