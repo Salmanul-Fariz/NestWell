@@ -133,6 +133,10 @@ interface TaskForm {
   notes: string;
 }
 
+type BulkTaskField = 'title' | 'status' | 'priority' | 'deadline' | 'hours' | 'notes';
+
+type BulkTaskFields = Record<BulkTaskField, boolean>;
+
 interface ReviewForm {
   _id?: string;
   type: 'weekly' | 'final';
@@ -217,8 +221,17 @@ export const SprintTrackingScreen: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<TaskForm | null>(null);
+  const [bulkTaskForm, setBulkTaskForm] = useState<TaskForm | null>(null);
+  const [bulkTaskFields, setBulkTaskFields] = useState<BulkTaskFields>({
+    title: false,
+    status: false,
+    priority: false,
+    deadline: false,
+    hours: false,
+    notes: false,
+  });
   const [viewingTask, setViewingTask] = useState<SprintTask | null>(null);
-  const [taskLayout, setTaskLayout] = useState<'board' | 'list'>('board');
+  const [taskLayout, setTaskLayout] = useState<'board' | 'list'>('list');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<TaskStatus | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm | null>(null);
@@ -498,6 +511,82 @@ export const SprintTrackingScreen: React.FC = () => {
       `${selectedTaskIds.length} task${selectedTaskIds.length === 1 ? '' : 's'} deleted.`,
     );
     if (complete) setSelectedTaskIds([]);
+  };
+
+  const openBulkTaskEditor = () => {
+    const firstSelectedTask = tasks.find((task) => selectedTaskIds.includes(task._id));
+    if (!firstSelectedTask) {
+      toast.error('Select at least one task to update.');
+      return;
+    }
+
+    setBulkTaskForm(taskEditForm(firstSelectedTask));
+    setBulkTaskFields({
+      title: false,
+      status: false,
+      priority: false,
+      deadline: false,
+      hours: false,
+      notes: false,
+    });
+  };
+
+  const saveBulkTaskUpdates = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!bulkTaskForm) return;
+    if (bulkTaskFields.title && !bulkTaskForm.title.trim()) {
+      toast.error('Task title cannot be empty.');
+      return;
+    }
+    if (bulkTaskFields.deadline && !bulkTaskForm.deadline) {
+      toast.error('Choose a scheduled date to apply.');
+      return;
+    }
+    const update = Object.fromEntries(
+      (Object.keys(bulkTaskFields) as BulkTaskField[])
+        .filter((field) => bulkTaskFields[field])
+        .map((field) => [
+          field,
+          field === 'title' ? bulkTaskForm.title.trim() : bulkTaskForm[field],
+        ]),
+    ) as Partial<Pick<SprintTask, BulkTaskField>>;
+    const fieldsToUpdate = Object.keys(update) as BulkTaskField[];
+    if (!fieldsToUpdate.length) {
+      toast.error('Choose at least one field to apply to the selected tasks.');
+      return;
+    }
+
+    const selectedTasks = tasks.filter((task) => selectedTaskIds.includes(task._id));
+    if (!selectedTasks.length) {
+      toast.error('No selected tasks were found. Select the tasks again and retry.');
+      setBulkTaskForm(null);
+      setSelectedTaskIds([]);
+      return;
+    }
+
+    setSaving(true);
+    const results = await Promise.allSettled(
+      selectedTasks.map((task) => api.patch(`/sprint/tasks/${task._id}`, update)),
+    );
+    const updatedIds = selectedTasks
+      .filter((_, index) => results[index].status === 'fulfilled')
+      .map((task) => task._id);
+    const failedTasks = selectedTasks.filter((_, index) => results[index].status === 'rejected');
+    const failedCount = failedTasks.length;
+    setSelectedTaskIds((current) => current.filter((id) => !updatedIds.includes(id)));
+
+    try {
+      await load();
+    } finally {
+      setSaving(false);
+    }
+
+    if (failedCount) {
+      toast.error(`${updatedIds.length} task${updatedIds.length === 1 ? '' : 's'} updated; ${failedCount} could not be updated. Failed tasks remain selected.`);
+    } else {
+      toast.success(`${updatedIds.length} selected task${updatedIds.length === 1 ? '' : 's'} updated.`);
+      setBulkTaskForm(null);
+    }
   };
 
   const saveLog = async (event: React.FormEvent) => {
@@ -805,7 +894,7 @@ export const SprintTrackingScreen: React.FC = () => {
                 <input aria-label="Tasks through date" className={inputClass} type="date" value={taskTo} onChange={(event) => setTaskTo(event.target.value)} />
                 {(taskSearch || taskStatusFilter || taskPriorityFilter || taskFrom || taskTo) && <button type="button" className={secondaryButtonClass} onClick={() => { setTaskSearch(''); setTaskStatusFilter(''); setTaskPriorityFilter(''); setTaskFrom(''); setTaskTo(''); }}>Clear filters</button>}
               </div>
-              {selectedTaskIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800"><span className="text-sm text-slate-600 dark:text-slate-300">{selectedTaskIds.length} selected</span><div className="flex gap-2"><button type="button" className="rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => void bulkDeleteTasks()}><Trash2 className="mr-1 inline h-4 w-4" />Delete selected</button><button type="button" className={secondaryButtonClass} onClick={() => setSelectedTaskIds([])}>Clear selection</button></div></div>}
+              {selectedTaskIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800"><span className="text-sm text-slate-600 dark:text-slate-300">{selectedTaskIds.length} selected</span><div className="flex flex-wrap items-center gap-2"><button type="button" disabled={saving} className={buttonClass} onClick={openBulkTaskEditor}><Activity className="h-4 w-4" />Update all</button><button type="button" disabled={saving} className="rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-rose-950/30" onClick={() => void bulkDeleteTasks()}><Trash2 className="mr-1 inline h-4 w-4" />Delete selected</button><button type="button" disabled={saving} className={secondaryButtonClass} onClick={() => setSelectedTaskIds([])}>Clear selection</button></div></div>}
               {overdueTasks.length > 0 && !taskFrom && !taskTo && !taskStatusFilter && (
                 <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1022,6 +1111,25 @@ export const SprintTrackingScreen: React.FC = () => {
               {!taskForm._id && <label className="block space-y-1.5 text-sm font-medium">Repeat daily until <span className="font-normal text-slate-400">(optional, up to 90 days)</span><input className={inputClass} type="date" min={taskForm.deadline} value={taskForm.repeatUntil} onChange={(event) => setTaskForm({ ...taskForm, repeatUntil: event.target.value })} /></label>}
               <label className="block space-y-1.5 text-sm font-medium">Notes<textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} value={taskForm.notes} onChange={(event) => setTaskForm({ ...taskForm, notes: event.target.value })} /></label>
               <div className="flex justify-between gap-2 pt-2">{taskForm._id ? <button type="button" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => { const task = tasks.find((item) => item._id === taskForm._id); if (task) { setTaskForm(null); void deleteTask(task); } }}><Trash2 className="h-4 w-4" /> Delete</button> : <span /> }<button className={buttonClass} disabled={saving}><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save task'}</button></div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {bulkTaskForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setBulkTaskForm(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="sprint-bulk-task-title" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="sprint-bulk-task-title" className="font-semibold text-slate-900 dark:text-white">Update selected tasks</h2><p className="mt-1 text-sm text-slate-500">Values are copied from “{tasks.find((task) => selectedTaskIds.includes(task._id))?.title}”. Select the fields you want applied to all {selectedTaskIds.length} selected tasks.</p></div><button type="button" className="text-sm text-slate-500" disabled={saving} onClick={() => setBulkTaskForm(null)}>Close</button></div>
+            <form onSubmit={saveBulkTaskUpdates} className="space-y-4">
+              <label className="block space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.title} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, title: event.target.checked })} />Apply title to all</span><input className={inputClass} required={bulkTaskFields.title} maxLength={120} disabled={!bulkTaskFields.title || saving} value={bulkTaskForm.title} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, title: event.target.value })} /></label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.deadline} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, deadline: event.target.checked })} />Apply date to all</span><input className={inputClass} type="date" required={bulkTaskFields.deadline} disabled={!bulkTaskFields.deadline || saving} value={bulkTaskForm.deadline} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, deadline: event.target.value })} /></label>
+                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.hours} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, hours: event.target.checked })} />Apply estimate to all</span><input className={inputClass} type="number" min="0" max="24" step="0.25" disabled={!bulkTaskFields.hours || saving} value={bulkTaskForm.hours} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, hours: Number(event.target.value) })} /></label>
+                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.status} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, status: event.target.checked })} />Apply status to all</span><select className={inputClass} disabled={!bulkTaskFields.status || saving} value={bulkTaskForm.status} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, status: event.target.value as TaskStatus })}>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label>
+                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.priority} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, priority: event.target.checked })} />Apply priority to all</span><select className={inputClass} disabled={!bulkTaskFields.priority || saving} value={bulkTaskForm.priority} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, priority: event.target.value as TaskPriority })}>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label>
+              </div>
+              <label className="block space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.notes} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, notes: event.target.checked })} />Apply notes to all</span><textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} disabled={!bulkTaskFields.notes || saving} value={bulkTaskForm.notes} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, notes: event.target.value })} /></label>
+              <div className="flex justify-end gap-2 pt-2"><button type="button" className={secondaryButtonClass} disabled={saving} onClick={() => setBulkTaskForm(null)}>Cancel</button><button className={buttonClass} disabled={saving}>{saving ? 'Updating…' : `Save for ${selectedTaskIds.length} tasks`}</button></div>
             </form>
           </section>
         </div>
