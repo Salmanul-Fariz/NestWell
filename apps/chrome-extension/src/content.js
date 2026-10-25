@@ -4,6 +4,8 @@ let lastSubmitted = null;
 let sessionLocked = true;
 let sessionReady = false;
 let resumingSubmit = false;
+let inspectTimer = null;
+let inspectingPage = false;
 const VAULT_CATEGORIES = [
   ['PERSONAL', 'Personal'],
   ['WORK', 'Work'],
@@ -175,19 +177,18 @@ function showMatches(entries, context) {
 }
 
 async function fillEntry(entry) {
-  if (sessionLocked) return;
-  const context = getLoginContext();
-  if (!context) return;
-  try {
-    const result = await send({ type: 'reveal', id: entry._id });
-    if (context.usernameField && entry.username) {
-      setNativeValue(context.usernameField, entry.username);
-    }
-    setNativeValue(context.passwordField, result.password);
-    closePanel();
-  } catch (error) {
-    showError(error);
+  if (sessionLocked) throw new Error('Unlock NestWell before filling a saved login.');
+  if (normalizeOrigin(entry.url) !== normalizeOrigin(window.location.href)) {
+    throw new Error('This saved login belongs to a different website.');
   }
+  const context = getLoginContext();
+  if (!context) throw new Error('No login form was found on this page.');
+  const result = await send({ type: 'reveal', id: entry._id });
+  if (context.usernameField && entry.username) {
+    setNativeValue(context.usernameField, entry.username);
+  }
+  setNativeValue(context.passwordField, result.password);
+  closePanel();
 }
 
 function setNativeValue(input, value) {
@@ -198,18 +199,33 @@ function setNativeValue(input, value) {
 }
 
 async function inspectPage() {
-  if (sessionLocked) return;
+  if (sessionLocked || inspectingPage || panel) return;
   const context = getLoginContext();
   if (!context) return;
+  inspectingPage = true;
   try {
     const result = await send({ type: 'getMatches', url: window.location.href });
     matchedEntries = result.entries;
-    if (matchedEntries.length || context.usernameField?.value || context.passwordField?.value) {
+    if (!panel && (matchedEntries.length || context.usernameField?.value || context.passwordField?.value)) {
       showMatches(matchedEntries, context);
     }
-  } catch {
-    // The extension stays quiet when it is locked or the backend is unavailable.
+  } catch (error) {
+    if (error.message === 'AUTH_REQUIRED') {
+      lockSession();
+    } else {
+      showMessage('NestWell is unavailable', error.message || 'Could not load saved logins for this page.');
+    }
+  } finally {
+    inspectingPage = false;
   }
+}
+
+function scheduleInspectPage() {
+  if (inspectTimer) window.clearTimeout(inspectTimer);
+  inspectTimer = window.setTimeout(() => {
+    inspectTimer = null;
+    void inspectPage();
+  }, 350);
 }
 
 function askToSave(candidate, existingEntries, preferredMode = 'add') {
@@ -337,7 +353,7 @@ async function saveSubmittedLogin(context, preferredMode = 'add') {
 document.addEventListener(
   'focusin',
   (event) => {
-    if (sessionReady && event.target.matches?.('input[type="password"], input[type="email"]')) inspectPage();
+    if (sessionReady && event.target.matches?.('input[type="password"], input[type="email"], input[type="text"], input[type="tel"]')) scheduleInspectPage();
   },
   true,
 );
@@ -350,7 +366,7 @@ document.addEventListener(
       event.target.matches?.('input[type="password"], input[type="email"], input[type="text"], input[type="tel"]')
     ) {
       const context = getLoginContext();
-      if (context?.passwordField?.value || context?.usernameField?.value) inspectPage();
+      if (context?.passwordField?.value || context?.usernameField?.value) scheduleInspectPage();
     }
   },
   true,
@@ -364,7 +380,7 @@ document.addEventListener(
       return;
     }
     const passwordField = getPasswordField(event.target);
-    const context = passwordField
+    const context = passwordField?.value
       ? {
           form: event.target,
           passwordField,
@@ -386,8 +402,17 @@ document.addEventListener(
   true,
 );
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'sessionLocked') lockSession();
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'sessionLocked') {
+    lockSession();
+    return;
+  }
+  if (message.type === 'fillCredential') {
+    fillEntry(message.entry)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message || 'Could not fill this login.' }));
+    return true;
+  }
 });
 
 send({ type: 'getState' })

@@ -16,7 +16,9 @@ Current features:
 - NestWell login modal
 - API URL configuration
 - Vault search and refresh
+- Add a login directly from the popup
 - Password show and copy
+- Fill matching-site login forms from the popup
 - 30-second reveal expiry
 - Lock/logout
 - Access-token refresh
@@ -38,7 +40,7 @@ apps/chrome-extension/
     content.css         Autofill panel styles
     popup.html          Extension popup structure
     popup.css           NestWell popup styling
-    popup.js            Popup state, search, reveal, copy, login modal
+    popup.js            Popup state, search, reveal, copy, save, and fill actions
     shared.js           Shared constants and origin helpers
   scripts/
     build.mjs           Copies src to dist
@@ -156,6 +158,9 @@ After source changes, run the build and click **Reload** on the extension page.
 - Logged-out state opens the NestWell login modal.
 - Wrong credentials show an error in the modal.
 - Successful login loads vault entries.
+- Add login saves the title, website, username, and password to the signed-in vault.
+- Fill appears only for a credential whose website origin matches the active tab.
+- Fill requests a short-lived password reveal and fills the active page's login form.
 - Search filters title, username, and URL.
 - Show displays a password and countdown.
 - Password disappears after 30 seconds.

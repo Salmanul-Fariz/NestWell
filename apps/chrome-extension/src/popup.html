@@ -16,7 +16,7 @@
                 <h1>NestWell</h1>
                 <p>Personal password vault</p>
             </div>
-            <button id="lock-button" class="icon-button hidden" title="Logout">Logout</button>
+            <button id="lock-button" class="icon-button hidden" title="Lock vault">Lock</button>
         </header>
 
         <section id="vault-view" class="view hidden">
@@ -25,15 +25,18 @@
                     <span class="eyebrow">PASSWORD VAULT</span>
                     <h2>Your credentials</h2>
                 </div>
-                <button id="refresh-button" class="icon-button" title="Refresh vault">↻</button>
+                <div class="toolbar-actions">
+                    <button id="add-button" class="primary-button compact" type="button">Add login</button>
+                    <button id="refresh-button" class="icon-button" title="Refresh vault" aria-label="Refresh vault">↻</button>
+                </div>
             </div>
-            <label class="search"><span>⌕</span><input id="search" type="search"
+            <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search"
                     placeholder="Search passwords" /></label>
             <div id="status" class="status hidden"></div>
             <div id="entries" class="entries"></div>
         </section>
 
-        <div id="login-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <div id="login-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="login-title">
             <div class="modal">
                 <div class="modal-heading">
                     <div class="brand-mark small">NW</div>
@@ -42,6 +45,7 @@
                     </div>
                 </div>
                 <p id="login-message" class="modal-copy">Unlock your personal password vault.</p>
+                <div id="login-error" class="status error hidden" role="alert"></div>
                 <form id="login-form" class="stack">
                     <label>Email<input id="email" type="email" autocomplete="username" required
                             placeholder="name@example.com" /></label>
@@ -52,7 +56,28 @@
             </div>
         </div>
 
-        <footer><span class="status-dot"></span><span id="footer-status">Local extension session</span></footer>
+        <div id="save-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="save-title">
+            <div class="modal">
+                <div class="modal-heading">
+                    <div class="brand-mark small">NW</div>
+                    <div><span class="eyebrow">ADD TO VAULT</span><h2 id="save-title">Save a login</h2></div>
+                </div>
+                <p class="modal-copy">Credentials are encrypted by NestWell and are not stored in the extension.</p>
+                <div id="save-error" class="status error hidden" role="alert"></div>
+                <form id="save-form" class="stack">
+                    <label>Website<input id="save-url" type="url" required placeholder="https://example.com" /></label>
+                    <label>Login name<input id="save-title-input" type="text" required maxlength="120" placeholder="Example account" /></label>
+                    <label>Username or email<input id="save-username" type="text" autocomplete="username" placeholder="name@example.com" /></label>
+                    <label>Password<input id="save-password" type="password" autocomplete="new-password" required /></label>
+                    <div class="modal-actions">
+                        <button id="cancel-save" class="secondary-button" type="button">Cancel</button>
+                        <button id="submit-save" class="primary-button" type="submit">Save login</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <footer><span class="status-dot"></span><span id="footer-status">Connect to your NestWell vault</span></footer>
     </main>
     <script type="module" src="popup.js"></script>
 </body>

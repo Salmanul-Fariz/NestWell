@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { entries: [], revealed: new Map(), query: '' };
+const state = { entries: [], revealed: new Map(), query: '', activeTab: null };
 
 function send(message) {
   return new Promise((resolve, reject) => {
@@ -24,8 +24,32 @@ function clearStatus() {
 
 function showLoginModal(message = 'Unlock your personal password vault.') {
   $('#login-message').textContent = message;
+  $('#login-error').classList.add('hidden');
   $('#login-modal').classList.remove('hidden');
   $('#email').focus();
+}
+
+function showLoginError(message) {
+  $('#login-error').textContent = message;
+  $('#login-error').classList.remove('hidden');
+}
+
+function showSaveModal() {
+  $('#save-error').classList.add('hidden');
+  $('#save-form').reset();
+  const tabUrl = state.activeTab?.url;
+  if (tabUrl && /^https?:\/\//i.test(tabUrl)) {
+    const url = new URL(tabUrl);
+    $('#save-url').value = url.origin;
+    $('#save-title-input').value = url.hostname;
+  }
+  $('#save-modal').classList.remove('hidden');
+  $('#save-title-input').focus();
+}
+
+function closeSaveModal() {
+  $('#save-password').value = '';
+  $('#save-modal').classList.add('hidden');
 }
 
 function clearReveal(id) {
@@ -55,6 +79,33 @@ function createButton(label, onClick, className = '') {
   if (className) button.className = className;
   button.addEventListener('click', onClick);
   return button;
+}
+
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  state.activeTab = tab || null;
+}
+
+async function fillOnActiveTab(entry) {
+  if (!state.activeTab?.id) {
+    showStatus('Could not find the active tab. Refresh the page and try again.', true);
+    return;
+  }
+  try {
+    const response = await chrome.tabs.sendMessage(state.activeTab.id, {
+      type: 'fillCredential',
+      entry,
+    });
+    if (!response?.ok) throw new Error(response?.error || 'No login form was found on this page.');
+    window.close();
+  } catch (error) {
+    showStatus(
+      error.message?.includes('Receiving end does not exist')
+        ? 'Refresh this website to enable NestWell autofill.'
+        : error.message || 'Could not fill the login on this page.',
+      true,
+    );
+  }
 }
 
 function renderEntries() {
@@ -136,7 +187,7 @@ function renderEntries() {
             state.revealed.set(entry._id, { password, expiresAt, timer });
           }
           await navigator.clipboard.writeText(password);
-          showStatus('Password copied. It will clear when the reveal expires.');
+          showStatus('Password copied to your clipboard.');
           renderEntries();
         } catch (error) {
           if (error.message === 'AUTH_REQUIRED') showLoginModal('Your session expired. Sign in again to continue.');
@@ -144,6 +195,19 @@ function renderEntries() {
         }
       }),
     );
+    const isMatchingSite = Boolean(
+      state.activeTab?.url &&
+      (() => {
+        try {
+          return new URL(entry.url).origin === new URL(state.activeTab.url).origin;
+        } catch {
+          return false;
+        }
+      })(),
+    );
+    if (isMatchingSite) {
+      actions.append(createButton('Fill', () => void fillOnActiveTab(entry), 'action-primary'));
+    }
 
     card.append(head, username, actions);
     container.append(card);
@@ -192,12 +256,45 @@ $('#login-form').addEventListener('submit', async (event) => {
     $('#password').value = '';
     showLoggedIn(result.user);
   } catch (error) {
-    showLoginModal(
-      error.message === 'AUTH_REQUIRED' ? 'Your session expired. Sign in again to continue.' : error.message,
-    );
+    showLoginError(error.message === 'AUTH_REQUIRED' ? 'Your session expired. Sign in again to continue.' : error.message);
   } finally {
     button.disabled = false;
     button.innerHTML = 'Sign in <span>→</span>';
+  }
+});
+
+$('#add-button').addEventListener('click', () => {
+  void getActiveTab().then(showSaveModal).catch((error) => showStatus(error.message, true));
+});
+$('#cancel-save').addEventListener('click', closeSaveModal);
+$('#save-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = $('#submit-save');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  $('#save-error').classList.add('hidden');
+  const candidate = {
+    url: $('#save-url').value.trim(),
+    title: $('#save-title-input').value.trim(),
+    username: $('#save-username').value.trim(),
+    password: $('#save-password').value,
+  };
+  try {
+    await send({ type: 'saveCandidate', candidate });
+    closeSaveModal();
+    showStatus('Login saved securely to your NestWell vault.');
+    await loadEntries();
+  } catch (error) {
+    if (error.message === 'AUTH_REQUIRED') {
+      closeSaveModal();
+      showLoginModal('Your session expired. Sign in again to continue.');
+    } else {
+      $('#save-error').textContent = error.message || 'Could not save this login.';
+      $('#save-error').classList.remove('hidden');
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save login';
   }
 });
 
@@ -207,15 +304,22 @@ $('#search').addEventListener('input', (event) => {
 });
 $('#refresh-button').addEventListener('click', loadEntries);
 $('#lock-button').addEventListener('click', async () => {
-  await send({ type: 'logout' });
-  state.revealed.forEach((value) => value.timer && window.clearInterval(value.timer));
-  state.revealed.clear();
-  showLoggedOut();
+  try {
+    await send({ type: 'logout' });
+    state.revealed.forEach((value) => value.timer && window.clearInterval(value.timer));
+    state.revealed.clear();
+    showLoggedOut();
+  } catch (error) {
+    showStatus(error.message || 'Could not lock the vault.', true);
+  }
 });
 
-send({ type: 'getState' })
-  .then((result) => {
+Promise.all([getActiveTab(), send({ type: 'getState' })])
+  .then(([, result]) => {
     if (result.loggedIn) showLoggedIn(result.user);
     else showLoggedOut();
   })
-  .catch(() => showLoggedOut());
+  .catch((error) => {
+    showLoggedOut();
+    showLoginError(error.message || 'Could not connect to the NestWell extension service.');
+  });

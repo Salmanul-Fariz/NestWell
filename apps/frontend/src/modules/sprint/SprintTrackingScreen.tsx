@@ -128,7 +128,10 @@ interface TaskForm {
   status: TaskStatus;
   priority: TaskPriority;
   deadline: string;
+  repeatMode: 'none' | 'until' | 'selected';
   repeatUntil: string;
+  repeatDates: string[];
+  repeatDateDraft: string;
   hours: number;
   notes: string;
 }
@@ -167,6 +170,7 @@ const periods: Array<{ id: AnalyticsPeriod; label: string }> = [
 
 const panelClass = `${THEME_CONFIG.surfaces.card} rounded-2xl p-5 shadow-sm`;
 const inputClass = `w-full rounded-xl px-3.5 py-2.5 text-sm outline-none transition ${THEME_CONFIG.surfaces.input}`;
+const taskSelectionCheckboxClass = 'h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 accent-indigo-600 transition focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-slate-600 dark:bg-slate-900 dark:accent-indigo-400 dark:focus:ring-offset-slate-900';
 const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50';
 const secondaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800';
 const taskBlank = (deadline = todayDateOnly()): TaskForm => ({
@@ -174,7 +178,10 @@ const taskBlank = (deadline = todayDateOnly()): TaskForm => ({
   status: 'todo',
   priority: 'medium',
   deadline,
+  repeatMode: 'none',
   repeatUntil: '',
+  repeatDates: [],
+  repeatDateDraft: '',
   hours: 1,
   notes: '',
 });
@@ -184,7 +191,10 @@ const taskEditForm = (task: SprintTask): TaskForm => ({
   status: task.status,
   priority: task.priority,
   deadline: task.deadline,
+  repeatMode: 'none',
   repeatUntil: '',
+  repeatDates: [],
+  repeatDateDraft: '',
   hours: task.hours,
   notes: task.notes,
 });
@@ -246,6 +256,7 @@ export const SprintTrackingScreen: React.FC = () => {
   const [taskTo, setTaskTo] = useState('');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [setupDate, setSetupDate] = useState(todayDateOnly());
+  const [startDateDraft, setStartDateDraft] = useState('');
   const [setupDays, setSetupDays] = useState(40);
   const [setupWeekends, setSetupWeekends] = useState<number[]>([5, 6]);
   const [starterTasks, setStarterTasks] = useState('');
@@ -260,12 +271,14 @@ export const SprintTrackingScreen: React.FC = () => {
       setSettings(settingsResponse.data);
       setError(null);
       if (!settingsResponse.data) {
+        setStartDateDraft('');
         setStats(null);
         setTasks([]);
         setLogs([]);
         setReviews([]);
         return;
       }
+      setStartDateDraft((current) => current || settingsResponse.data!.startDate);
       const [statsResponse, tasksResponse, logsResponse, reviewsResponse] = await Promise.all([
         api.get<SprintStats>('/sprint/stats'),
         api.get<SprintTask[]>('/sprint/tasks'),
@@ -431,6 +444,20 @@ export const SprintTrackingScreen: React.FC = () => {
     );
   };
 
+  const updateSprintStartDate = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!settings || !startDateDraft || startDateDraft === settings.startDate) return;
+    if (!window.confirm(
+      `Move Day 1 from ${formatDay(settings.startDate)} to ${formatDay(startDateDraft)}? This shifts every sprint day, daily log date, and scheduled task date by the same amount.`,
+    )) return;
+
+    const complete = await request(
+      () => api.patch('/sprint/settings/start-date', { startDate: startDateDraft }),
+      'Sprint dates and scheduled task dates updated.',
+    );
+    if (complete) setStartDateDraft(startDateDraft);
+  };
+
   const startNewSprint = async () => {
     if (!window.confirm('Start a new sprint? This permanently removes the current sprint’s tasks, daily logs, and reviews.')) {
       return;
@@ -441,6 +468,7 @@ export const SprintTrackingScreen: React.FC = () => {
     );
     if (complete) {
       setSetupDate(todayDateOnly());
+      setStartDateDraft('');
       setSetupDays(40);
       setSetupWeekends([5, 6]);
       setStarterTasks('');
@@ -451,7 +479,7 @@ export const SprintTrackingScreen: React.FC = () => {
   const saveTask = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!taskForm) return;
-    const { repeatUntil, _id } = taskForm;
+    const { repeatMode, repeatUntil, _id } = taskForm;
     const fields = {
       title: taskForm.title,
       status: taskForm.status,
@@ -460,7 +488,11 @@ export const SprintTrackingScreen: React.FC = () => {
       hours: taskForm.hours,
       notes: taskForm.notes,
     };
-    if (!_id && repeatUntil) {
+    if (!_id && repeatMode === 'until') {
+      if (!repeatUntil) {
+        toast.error('Choose a date to repeat the task until.');
+        return;
+      }
       if (repeatUntil < fields.deadline) {
         toast.error('The final repeat date must be on or after the first date.');
         return;
@@ -479,6 +511,19 @@ export const SprintTrackingScreen: React.FC = () => {
       const complete = await request(
         () => api.post('/sprint/tasks', { ...fields, dates }),
         'Task added to your sprint.',
+      );
+      if (complete) setTaskForm(null);
+      return;
+    }
+    if (!_id && repeatMode === 'selected') {
+      const dates = [...new Set([fields.deadline, ...taskForm.repeatDates])].sort();
+      if (dates.length > 90) {
+        toast.error('A repeated task can have at most 90 selected dates.');
+        return;
+      }
+      const complete = await request(
+        () => api.post('/sprint/tasks', { ...fields, dates }),
+        `${dates.length} task${dates.length === 1 ? '' : 's'} added to your sprint.`,
       );
       if (complete) setTaskForm(null);
       return;
@@ -906,17 +951,33 @@ export const SprintTrackingScreen: React.FC = () => {
           )}
 
           {section === 'tasks' && (
-            <section className={`${panelClass} space-y-4`}>
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900 dark:text-white">Sprint tasks</h2><p className="mt-1 text-xs text-slate-500">{filteredTasks.length} matching task{filteredTasks.length === 1 ? '' : 's'}</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-950" role="group" aria-label="Task view"><button type="button" aria-pressed={taskLayout === 'board'} className={`rounded-lg px-3 py-2 text-sm font-medium ${taskLayout === 'board' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`} onClick={() => setTaskLayout('board')}>Board</button><button type="button" aria-pressed={taskLayout === 'list'} className={`rounded-lg px-3 py-2 text-sm font-medium ${taskLayout === 'list' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`} onClick={() => setTaskLayout('list')}>List</button></div><button type="button" className={buttonClass} onClick={() => setTaskForm(taskBlank(stats?.today))}><Plus className="h-4 w-4" /> New task</button></div></div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <input aria-label="Search tasks" className={inputClass} type="search" placeholder="Search tasks" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} />
-                <select aria-label="Filter by status" className={inputClass} value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>
-                <select aria-label="Filter by priority" className={inputClass} value={taskPriorityFilter} onChange={(event) => setTaskPriorityFilter(event.target.value)}><option value="">All priorities</option>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select>
-                <input aria-label="Tasks from date" className={inputClass} type="date" value={taskFrom} onChange={(event) => setTaskFrom(event.target.value)} />
-                <input aria-label="Tasks through date" className={inputClass} type="date" value={taskTo} onChange={(event) => setTaskTo(event.target.value)} />
-                {(taskSearch || taskStatusFilter || taskPriorityFilter || taskFrom || taskTo) && <button type="button" className={secondaryButtonClass} onClick={() => { setTaskSearch(''); setTaskStatusFilter(''); setTaskPriorityFilter(''); setTaskFrom(''); setTaskTo(''); }}>Clear filters</button>}
+            <section className={`${panelClass} space-y-3 !p-4 sm:!p-5`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-baseline gap-2">
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">Sprint tasks</h2>
+                  <span className="text-xs text-slate-500">{filteredTasks.length} shown</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-950" role="group" aria-label="Task view">
+                    <button type="button" aria-pressed={taskLayout === 'board'} className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${taskLayout === 'board' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`} onClick={() => setTaskLayout('board')}>Board</button>
+                    <button type="button" aria-pressed={taskLayout === 'list'} className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${taskLayout === 'list' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`} onClick={() => setTaskLayout('list')}>List</button>
+                  </div>
+                  <button type="button" className={`${buttonClass} px-3 py-2 text-xs`} onClick={() => setTaskForm(taskBlank(stats?.today))}><Plus className="h-3.5 w-3.5" /> New task</button>
+                </div>
               </div>
-              {selectedTaskIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800"><span className="text-sm text-slate-600 dark:text-slate-300">{selectedTaskIds.length} selected</span><div className="flex flex-wrap items-center gap-2"><button type="button" disabled={saving} className={buttonClass} onClick={openBulkTaskEditor}><Activity className="h-4 w-4" />Update all</button><button type="button" disabled={saving} className="rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-rose-950/30" onClick={() => void bulkDeleteTasks()}><Trash2 className="mr-1 inline h-4 w-4" />Delete selected</button><button type="button" disabled={saving} className={secondaryButtonClass} onClick={() => setSelectedTaskIds([])}>Clear selection</button></div></div>}
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-2 dark:bg-slate-950/50">
+                <input aria-label="Search tasks" className={`${inputClass} min-w-40 flex-[2] py-2 text-xs`} type="search" placeholder="Search tasks…" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} />
+                <select aria-label="Filter by status" className={`${inputClass} min-w-32 flex-1 py-2 text-xs`} value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>
+                <select aria-label="Filter by priority" className={`${inputClass} min-w-32 flex-1 py-2 text-xs`} value={taskPriorityFilter} onChange={(event) => setTaskPriorityFilter(event.target.value)}><option value="">All priorities</option>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select>
+                <div className="flex min-w-0 flex-[2] items-center gap-1.5">
+                  <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Due</span>
+                  <input aria-label="Tasks from date" className={`${inputClass} min-w-0 flex-1 px-2 py-2 text-xs`} type="date" value={taskFrom} onChange={(event) => setTaskFrom(event.target.value)} />
+                  <span className="text-xs text-slate-400">–</span>
+                  <input aria-label="Tasks through date" className={`${inputClass} min-w-0 flex-1 px-2 py-2 text-xs`} type="date" value={taskTo} onChange={(event) => setTaskTo(event.target.value)} />
+                </div>
+                {(taskSearch || taskStatusFilter || taskPriorityFilter || taskFrom || taskTo) && <button type="button" className="rounded-lg px-2.5 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40" onClick={() => { setTaskSearch(''); setTaskStatusFilter(''); setTaskPriorityFilter(''); setTaskFrom(''); setTaskTo(''); }}>Reset</button>}
+              </div>
+              {selectedTaskIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/50 dark:bg-indigo-950/20"><span className="text-xs font-medium text-indigo-800 dark:text-indigo-200">{selectedTaskIds.length} selected</span><div className="flex flex-wrap items-center gap-1.5"><button type="button" disabled={saving} className={`${buttonClass} px-3 py-1.5 text-xs`} onClick={openBulkTaskEditor}><Activity className="h-3.5 w-3.5" />Update all</button><button type="button" disabled={saving} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-50 dark:hover:bg-rose-950/30" onClick={() => void bulkDeleteTasks()}><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button><button type="button" disabled={saving} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-white disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => setSelectedTaskIds([])}>Clear</button></div></div>}
               {overdueTasks.length > 0 && !taskFrom && !taskTo && !taskStatusFilter && (
                 <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -968,7 +1029,7 @@ export const SprintTrackingScreen: React.FC = () => {
                                   checked={selectedTaskIds.includes(task._id)}
                                   onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))}
                                   onClick={(event) => event.stopPropagation()}
-                                  className="mt-1"
+                                  className={`${taskSelectionCheckboxClass} mt-1`}
                                 />
                                 <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-slate-400" aria-hidden="true" />
                                 <button
@@ -1004,8 +1065,12 @@ export const SprintTrackingScreen: React.FC = () => {
               ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-left text-sm">
-                  <thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium"><input type="checkbox" aria-label="Select all visible tasks" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task._id))} onChange={(event) => setSelectedTaskIds(event.target.checked ? filteredTasks.map((task) => task._id) : [])} /></th><th className="px-3 py-2 font-medium">Task</th><th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Estimate</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th></tr></thead>
-                  <tbody>{filteredTasks.map((task) => <tr key={task._id} className={`border-t ${isOverdue(task, stats?.today ?? todayDateOnly()) ? 'border-rose-200 bg-rose-50/60 dark:border-rose-950 dark:bg-rose-950/10' : 'border-slate-100 dark:border-slate-800'}`}><td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${task.title}`} checked={selectedTaskIds.includes(task._id)} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))} /></td><td className="max-w-64 px-3 py-3"><button type="button" className="truncate text-left font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setViewingTask(task)}>{task.title}</button>{task.notes && <p className="mt-1 truncate text-xs text-slate-500">{task.notes}</p>}</td><td className={`px-3 py-3 ${isOverdue(task, stats?.today ?? todayDateOnly()) ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500'}`}>{task.deadline ? <span className="inline-flex items-center gap-1.5">{isOverdue(task, stats?.today ?? todayDateOnly()) && <AlertTriangle className="h-3.5 w-3.5" />}{formatDay(task.deadline)}{isOverdue(task, stats?.today ?? todayDateOnly()) && <span className="text-[10px] uppercase">Overdue</span>}</span> : '—'}</td><td className="px-3 py-3 text-slate-500">{task.hours}h</td><td className="px-3 py-3 capitalize text-slate-500">{task.priority}</td><td className="px-3 py-3"><button type="button" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={() => void changeTaskStatus(task)}>{statusLabels[task.status]}</button></td><td className="px-3 py-3"><div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Edit ${task.title}`} onClick={() => setTaskForm(taskEditForm(task))}><Activity className="h-4 w-4" /></button><button type="button" className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 className="h-4 w-4" /></button></div></td></tr>)}</tbody>
+                  <thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium"><input className={taskSelectionCheckboxClass} type="checkbox" aria-label="Select all visible tasks" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task._id))} onChange={(event) => setSelectedTaskIds(event.target.checked ? filteredTasks.map((task) => task._id) : [])} /></th><th className="px-3 py-2 font-medium">Task</th><th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Estimate</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th></tr></thead>
+                  <tbody>{filteredTasks.map((task) => {
+                    const selected = selectedTaskIds.includes(task._id);
+                    const overdue = isOverdue(task, stats?.today ?? todayDateOnly());
+                    return <tr key={task._id} className={`border-t transition-colors ${selected ? 'bg-indigo-50/70 dark:bg-indigo-950/25' : overdue ? 'bg-rose-50/60 dark:bg-rose-950/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'} ${overdue ? 'border-rose-200 dark:border-rose-950' : 'border-slate-100 dark:border-slate-800'}`}><td className="px-3 py-3"><input className={taskSelectionCheckboxClass} type="checkbox" aria-label={`Select ${task.title}`} checked={selected} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))} /></td><td className="max-w-64 px-3 py-3"><button type="button" className="truncate text-left font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setViewingTask(task)}>{task.title}</button>{task.notes && <p className="mt-1 truncate text-xs text-slate-500">{task.notes}</p>}</td><td className={`px-3 py-3 ${overdue ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500'}`}>{task.deadline ? <span className="inline-flex items-center gap-1.5">{overdue && <AlertTriangle className="h-3.5 w-3.5" />}{formatDay(task.deadline)}{overdue && <span className="text-[10px] uppercase">Overdue</span>}</span> : '—'}</td><td className="px-3 py-3 text-slate-500">{task.hours}h</td><td className="px-3 py-3 capitalize text-slate-500">{task.priority}</td><td className="px-3 py-3"><button type="button" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={() => void changeTaskStatus(task)}>{statusLabels[task.status]}</button></td><td className="px-3 py-3"><div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Edit ${task.title}`} onClick={() => setTaskForm(taskEditForm(task))}><Activity className="h-4 w-4" /></button><button type="button" className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 className="h-4 w-4" /></button></div></td></tr>;
+                  })}</tbody>
                 </table>
               </div>
               )}
@@ -1047,6 +1112,14 @@ export const SprintTrackingScreen: React.FC = () => {
           {section === 'setup' && (
             <section className={`${panelClass} max-w-2xl`}>
               <h2 className="font-semibold text-slate-900 dark:text-white">Sprint settings</h2><p className="mt-1 text-sm text-slate-500">This sprint began {settings && formatDay(settings.startDate)} and currently runs for {settings?.totalDays} days.</p>
+              <form onSubmit={updateSprintStartDate} className="mt-5 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Change sprint start date</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">Move Day 1 to a different date. All sprint day dates and scheduled task dates will shift by the same number of days; task details and daily log entries stay attached to their sprint days.</p>
+                <div className="mt-3 flex flex-wrap items-end gap-3">
+                  <label className="max-w-56 flex-1 space-y-1.5 text-sm font-medium">New Day 1 date<input className={inputClass} type="date" required value={startDateDraft || settings?.startDate || ''} onChange={(event) => setStartDateDraft(event.target.value)} /></label>
+                  <button className={buttonClass} disabled={saving || !settings || startDateDraft === settings?.startDate}><CalendarDays className="h-4 w-4" /> Update sprint dates</button>
+                </div>
+              </form>
               <form onSubmit={extendSprint} className="mt-5 flex flex-wrap items-end gap-3"><label className="max-w-48 flex-1 space-y-1.5 text-sm font-medium">Add days<input className={inputClass} type="number" min="1" max="365" value={extendDays} onChange={(event) => setExtendDays(Number(event.target.value))} /></label><button className={buttonClass} disabled={saving}><Plus className="h-4 w-4" /> Extend sprint</button></form>
               <div className="mt-5 border-t border-slate-100 pt-4 text-sm dark:border-slate-800"><p><span className="text-slate-500">Start date</span><span className="ml-3 font-medium text-slate-800 dark:text-slate-100">{settings && formatDay(settings.startDate)}</span></p><p className="mt-2"><span className="text-slate-500">Rest days</span><span className="ml-3 font-medium text-slate-800 dark:text-slate-100">{settings?.weekendDays.map((day) => weekdays[day].slice(0, 3)).join(', ') || 'None'}</span></p></div>
               <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
@@ -1130,9 +1203,57 @@ export const SprintTrackingScreen: React.FC = () => {
             <div className="mb-5 flex items-center justify-between"><h2 id="sprint-task-title" className="font-semibold text-slate-900 dark:text-white">{taskForm._id ? 'Edit task' : 'New sprint task'}</h2><button type="button" className="text-sm text-slate-500" onClick={() => setTaskForm(null)}>Close</button></div>
             <form onSubmit={saveTask} className="space-y-4">
               <label className="block space-y-1.5 text-sm font-medium">Task title<input className={inputClass} required maxLength={120} autoFocus value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></label>
-              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Scheduled date<input className={inputClass} type="date" required value={taskForm.deadline} onChange={(event) => setTaskForm({ ...taskForm, deadline: event.target.value })} /></label><label className="space-y-1.5 text-sm font-medium">Estimated time (hours)<input className={inputClass} type="number" min="0" max="24" step="0.25" value={taskForm.hours} onChange={(event) => setTaskForm({ ...taskForm, hours: Number(event.target.value) })} /></label></div>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">{!taskForm._id && taskForm.repeatMode === 'selected' ? 'First repeat date' : 'Scheduled date'}<input className={inputClass} type="date" required value={taskForm.deadline} onChange={(event) => setTaskForm({ ...taskForm, deadline: event.target.value })} /></label><label className="space-y-1.5 text-sm font-medium">Estimated time (hours)<input className={inputClass} type="number" min="0" max="24" step="0.25" value={taskForm.hours} onChange={(event) => setTaskForm({ ...taskForm, hours: Number(event.target.value) })} /></label></div>
               <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Status<select className={inputClass} value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label><label className="space-y-1.5 text-sm font-medium">Priority<select className={inputClass} value={taskForm.priority} onChange={(event) => setTaskForm({ ...taskForm, priority: event.target.value as TaskPriority })}>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label></div>
-              {!taskForm._id && <label className="block space-y-1.5 text-sm font-medium">Repeat daily until <span className="font-normal text-slate-400">(optional, up to 90 days)</span><input className={inputClass} type="date" min={taskForm.deadline} value={taskForm.repeatUntil} onChange={(event) => setTaskForm({ ...taskForm, repeatUntil: event.target.value })} /></label>}
+              {!taskForm._id && (
+                <fieldset className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                  <legend className="px-1 text-sm font-medium">Repeat task</legend>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {([
+                      ['none', 'No repeat'],
+                      ['until', 'Every day until'],
+                      ['selected', 'Selected dates'],
+                    ] as const).map(([value, label]) => (
+                      <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium dark:bg-slate-950/60">
+                        <input type="radio" name="repeat-mode" value={value} checked={taskForm.repeatMode === value} onChange={() => setTaskForm({ ...taskForm, repeatMode: value })} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {taskForm.repeatMode === 'until' && (
+                    <label className="block space-y-1.5 text-sm font-medium">Repeat daily through<input className={inputClass} type="date" required min={taskForm.deadline} value={taskForm.repeatUntil} onChange={(event) => setTaskForm({ ...taskForm, repeatUntil: event.target.value })} /><span className="text-xs font-normal text-slate-500">Creates one task per day, up to 90 dates.</span></label>
+                  )}
+                  {taskForm.repeatMode === 'selected' && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-slate-500">The first repeat date is included. Add more dates below (up to 90 total).</p>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <label className="min-w-0 flex-1 space-y-1.5 text-sm font-medium">Add another date<input className={inputClass} type="date" value={taskForm.repeatDateDraft} onChange={(event) => setTaskForm({ ...taskForm, repeatDateDraft: event.target.value })} /></label>
+                        <button type="button" className={secondaryButtonClass} onClick={() => {
+                          const date = taskForm.repeatDateDraft;
+                          if (!date) {
+                            toast.error('Choose a date to add.');
+                            return;
+                          }
+                          const dates = [...new Set([taskForm.deadline, ...taskForm.repeatDates, date])].sort();
+                          if (dates.length > 90) {
+                            toast.error('A repeated task can have at most 90 selected dates.');
+                            return;
+                          }
+                          setTaskForm({ ...taskForm, repeatDates: [...new Set([...taskForm.repeatDates, date])], repeatDateDraft: '' });
+                        }}>Add date</button>
+                      </div>
+                      <ul className="flex flex-wrap gap-2" aria-label="Selected repeat dates">
+                        {[...new Set([taskForm.deadline, ...taskForm.repeatDates])].sort().map((date) => (
+                          <li key={date} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                            {formatDay(date)}{date === taskForm.deadline ? ' · first' : ''}
+                            {date !== taskForm.deadline && <button type="button" aria-label={`Remove ${formatDay(date)}`} className="ml-1 font-bold" onClick={() => setTaskForm({ ...taskForm, repeatDates: taskForm.repeatDates.filter((item) => item !== date) })}>×</button>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </fieldset>
+              )}
               <label className="block space-y-1.5 text-sm font-medium">Notes<textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} value={taskForm.notes} onChange={(event) => setTaskForm({ ...taskForm, notes: event.target.value })} /></label>
               <div className="flex justify-between gap-2 pt-2">{taskForm._id ? <button type="button" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => { const task = tasks.find((item) => item._id === taskForm._id); if (task) { setTaskForm(null); void deleteTask(task); } }}><Trash2 className="h-4 w-4" /> Delete</button> : <span /> }<button className={buttonClass} disabled={saving}><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save task'}</button></div>
             </form>

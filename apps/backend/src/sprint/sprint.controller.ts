@@ -17,6 +17,7 @@ import {
   CreateSprintTaskDto,
   ExtendSprintDto,
   SprintSettingsDto,
+  UpdateSprintStartDateDto,
   UpdateSprintDayLogDto,
   UpdateSprintTaskDto,
 } from './dto/sprint.dto';
@@ -37,6 +38,14 @@ export class SprintController {
     @Body() dto: SprintSettingsDto,
   ) {
     return this.sprintService.configure(userId, dto);
+  }
+
+  @Patch('settings/start-date')
+  updateStartDate(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: UpdateSprintStartDateDto,
+  ) {
+    return this.sprintService.updateStartDate(userId, dto.startDate);
   }
 
   @Delete('settings')

@@ -56,6 +56,11 @@ export class ExtendSprintDto {
   days = 15;
 }
 
+export class UpdateSprintStartDateDto {
+  @IsDateString()
+  startDate: string;
+}
+
 export class CreateSprintTaskDto {
   @IsString()
   @MinLength(1)

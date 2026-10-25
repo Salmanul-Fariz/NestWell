@@ -115,6 +115,61 @@ export class SprintService {
     });
   }
 
+  async updateStartDate(userId: string, startDate: string) {
+    if (!parseDate(startDate)) {
+      throw new BadRequestException('Choose a valid sprint start date.');
+    }
+    const owner = this.owner(userId);
+    const settings = await this.settingsModel.findOne({ userId: owner }).exec();
+    if (!settings) throw new NotFoundException('Set up a sprint before changing its start date.');
+    if (settings.startDate === startDate) return settings;
+
+    const oldStart = parseDate(settings.startDate);
+    const newStart = parseDate(startDate);
+    if (!oldStart || !newStart) {
+      throw new BadRequestException('The current sprint start date is invalid.');
+    }
+    const dayShift = Math.round((newStart.getTime() - oldStart.getTime()) / DAY_MS);
+    const logs = await this.dayLogModel
+      .find({ userId: owner })
+      .sort({ date: dayShift > 0 ? -1 : 1 })
+      .exec();
+    const tasks = await this.taskModel.find({ userId: owner }).exec();
+
+    const taskUpdates = tasks.map((task) => {
+      if (!task.deadline) return null;
+      if (!parseDate(task.deadline)) {
+        throw new BadRequestException(`Task "${task.title}" has an invalid scheduled date and could not be shifted.`);
+      }
+      return {
+        updateOne: {
+          filter: { _id: task._id, userId: owner },
+          update: { $set: { deadline: addDays(task.deadline, dayShift) } },
+        },
+      };
+    }).filter((update): update is NonNullable<typeof update> => update !== null);
+
+    const logUpdates = logs.map((log) => ({
+      updateOne: {
+        filter: { _id: log._id, userId: owner },
+        update: {
+          $set: {
+            date: addDays(startDate, log.day - 1),
+            isWeekend: settings.weekendDays.includes(
+              dayOfWeek(addDays(startDate, log.day - 1)),
+            ),
+          },
+        },
+      },
+    }));
+    if (logUpdates.length) await this.dayLogModel.bulkWrite(logUpdates);
+    if (taskUpdates.length) await this.taskModel.bulkWrite(taskUpdates);
+
+    settings.startDate = startDate;
+    await settings.save();
+    return settings;
+  }
+
   async removeSprint(userId: string) {
     const owner = this.owner(userId);
     await Promise.all([
