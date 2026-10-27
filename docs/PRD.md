@@ -172,7 +172,7 @@ Sprint data is scoped to the authenticated user. The Sprint workspace includes:
 
 - A sprint setup flow for the start date, duration, rest days, and optional starter tasks; active sprints can be extended without clearing their history.
 - Task planning with status, priority, scheduled date, estimated hours, notes, search and filters, repeat scheduling, and bulk deletion.
-- A daily log for accomplishments, obstacles, sleep, focus time, and scheduled-task completion.
+- A daily review for completed work, blockers, sleep, focus time, spending notes, and outstanding follow-ups, with up to three priorities recorded for the next day; detailed expense analysis remains in weekly Finance reviews.
 - Weekly and final reviews, including week-level progress summaries.
 - Overview and analytics for progress, completed hours, active days, streaks, and daily completion across today, week, weekend, month, or the full sprint.
 

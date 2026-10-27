@@ -33,6 +33,18 @@ export class SprintDayLog {
 
   @Prop({ type: String, default: '', maxlength: 4000 })
   obstacles: string;
+
+  @Prop({ type: Number, min: 0, max: 1000000000, default: null })
+  spendingAmount?: number | null;
+
+  @Prop({ type: String, default: '', maxlength: 2000 })
+  spendingNotes: string;
+
+  @Prop({ type: String, default: '', maxlength: 2000 })
+  followUps: string;
+
+  @Prop({ type: [String], default: [] })
+  tomorrowPriorities: string[];
 }
 
 export const SprintDayLogSchema = SchemaFactory.createForClass(SprintDayLog);

@@ -169,6 +169,30 @@ export class UpdateSprintDayLogDto {
   @IsString()
   @MaxLength(4000)
   obstacles?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1000000000)
+  spendingAmount?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  spendingNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  followUps?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  tomorrowPriorities?: string[];
 }
 
 export class CreateSprintReviewDto {

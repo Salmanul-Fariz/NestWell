@@ -46,6 +46,10 @@ interface SprintDayLog {
   focusVision?: string;
   accomplishments: string;
   obstacles: string;
+  spendingAmount?: number | null;
+  spendingNotes?: string;
+  followUps?: string;
+  tomorrowPriorities?: string[];
   score: number;
   taskCounts: { total: number; done: number; doing: number; todo: number };
 }
@@ -77,7 +81,7 @@ interface SprintStats {
   avgScore: number;
   streak: number;
   dailyScore: number;
-  dailyLog: Pick<SprintDayLog, 'day' | 'date' | 'isWeekend' | 'sleepHours' | 'focusHours' | 'focusVision' | 'accomplishments' | 'obstacles'> | null;
+  dailyLog: Pick<SprintDayLog, 'day' | 'date' | 'isWeekend' | 'sleepHours' | 'focusHours' | 'focusVision' | 'accomplishments' | 'obstacles' | 'spendingAmount' | 'spendingNotes' | 'followUps' | 'tomorrowPriorities'> | null;
   todayTasks: SprintTask[];
   upcoming: SprintTask[];
   sprintEndDate: string;
@@ -160,6 +164,11 @@ const sections: Array<{ id: SprintSection; label: string; icon: React.ElementTyp
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const statuses: TaskStatus[] = ['todo', 'doing', 'done'];
 const statusLabels: Record<TaskStatus, string> = { todo: 'To do', doing: 'In progress', done: 'Done' };
+const priorityBadgeClasses: Record<TaskPriority, string> = {
+  high: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300',
+  medium: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300',
+  low: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300',
+};
 const periods: Array<{ id: AnalyticsPeriod; label: string }> = [
   { id: 'day', label: 'Today' },
   { id: 'week', label: 'Week' },
@@ -382,6 +391,10 @@ export const SprintTrackingScreen: React.FC = () => {
       log.focusVision ||
       log.sleepHours != null ||
       log.focusHours != null ||
+      log.spendingAmount != null ||
+      log.spendingNotes ||
+      log.followUps ||
+      log.tomorrowPriorities?.some((priority) => priority.trim()) ||
       log.taskCounts.total > 0,
   ).length;
   const countableLogs = logs.filter(
@@ -671,6 +684,13 @@ export const SprintTrackingScreen: React.FC = () => {
         focusVision: selectedLog.focusVision,
         accomplishments: selectedLog.accomplishments,
         obstacles: selectedLog.obstacles,
+        spendingAmount: selectedLog.spendingAmount ?? null,
+        spendingNotes: selectedLog.spendingNotes ?? '',
+        followUps: selectedLog.followUps ?? '',
+        tomorrowPriorities: (selectedLog.tomorrowPriorities ?? [])
+          .map((priority) => priority.trim())
+          .filter(Boolean)
+          .slice(0, 3),
       }),
       `Day ${selectedLog.day} saved.`,
     );
@@ -860,7 +880,14 @@ export const SprintTrackingScreen: React.FC = () => {
                               </button>
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
-                              <span>{task.hours}h · {task.priority} priority</span>
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" title="Estimated time">
+                                <Clock3 className="h-3 w-3" aria-hidden="true" />
+                                {task.hours}h
+                              </span>
+                              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${priorityBadgeClasses[task.priority]}`}>
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+                                {task.priority}
+                              </span>
                               <div className="flex gap-1">
                                 <button type="button" aria-label={`Move ${task.title} backward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'todo' || saving} onClick={() => void changeTaskStatus(task, -1)}><ChevronLeft className="h-4 w-4" /></button>
                                 <button type="button" aria-label={`Move ${task.title} forward`} className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800" disabled={status === 'done' || saving} onClick={() => void changeTaskStatus(task)}><ChevronRight className="h-4 w-4" /></button>
@@ -944,7 +971,18 @@ export const SprintTrackingScreen: React.FC = () => {
               )}
 
               <div className="grid gap-5 lg:grid-cols-2">
-                <section className={panelClass}><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold text-slate-900 dark:text-white">Daily check-in</h3><p className="mt-1 text-xs text-slate-500">{stats.dailyLog ? `Day ${stats.dailyLog.day}` : 'Keep a note of how today went.'}</p></div><button type="button" className={secondaryButtonClass} onClick={() => { const log = logs.find((item) => item.date === stats.today); if (log) setSelectedLog(log); else setSection('log'); }}>Open log</button></div>{stats.dailyLog?.focusVision && <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-500/20 dark:bg-indigo-500/10"><p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Today’s focus / vision</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{stats.dailyLog.focusVision}</p></div>}<p className="min-h-10 text-sm text-slate-600 dark:text-slate-300">{stats.dailyLog?.accomplishments || 'Record your wins, focus time, and anything that got in the way.'}</p><div className="mt-3 flex gap-5 border-t border-slate-100 pt-3 text-xs dark:border-slate-800"><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.sleepHours ?? '–'}h</b><span className="ml-1 text-slate-500">sleep</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.focusHours ?? '–'}h</b><span className="ml-1 text-slate-500">focus</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyScore}%</b><span className="ml-1 text-slate-500">tasks done</span></span></div></section>
+                <section className={panelClass}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <div><h3 className="font-semibold text-slate-900 dark:text-white">Daily review</h3><p className="mt-1 text-xs text-slate-500">{stats.dailyLog ? `Day ${stats.dailyLog.day}` : 'Review progress and prepare for tomorrow.'}</p></div>
+                    <button type="button" className={secondaryButtonClass} onClick={() => { const log = logs.find((item) => item.date === stats.today); if (log) setSelectedLog(log); else setSection('log'); }}>Open review</button>
+                  </div>
+                  {stats.dailyLog?.focusVision && <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-500/20 dark:bg-indigo-500/10"><p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Today’s focus / vision</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{stats.dailyLog.focusVision}</p></div>}
+                  <p className="min-h-10 text-sm text-slate-600 dark:text-slate-300">{stats.dailyLog?.accomplishments || 'Record completed work, blockers, spending, and follow-ups.'}</p>
+                  {stats.dailyLog?.tomorrowPriorities?.some((priority) => priority.trim()) && <div className="mt-3"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Tomorrow’s priorities</p><ol className="mt-1 list-inside list-decimal space-y-1 text-sm text-slate-700 dark:text-slate-300">{stats.dailyLog.tomorrowPriorities.filter((priority) => priority.trim()).map((priority, index) => <li key={`${index}-${priority}`}>{priority}</li>)}</ol></div>}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800"><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.sleepHours ?? '–'}h</b><span className="ml-1 text-slate-500">sleep</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog?.focusHours ?? '–'}h</b><span className="ml-1 text-slate-500">focus</span></span><span><b className="text-slate-800 dark:text-slate-100">{stats.dailyScore}%</b><span className="ml-1 text-slate-500">tasks done</span></span>{stats.dailyLog?.spendingAmount != null && <span><b className="text-slate-800 dark:text-slate-100">{stats.dailyLog.spendingAmount}</b><span className="ml-1 text-slate-500">spent today</span></span>}</div>
+                  {stats.dailyLog?.spendingNotes && <p className="mt-2 text-xs text-slate-500"><span className="font-semibold text-slate-700 dark:text-slate-300">Spending notes: </span>{stats.dailyLog.spendingNotes}</p>}
+                  {stats.dailyLog?.followUps && <p className="mt-3 text-xs text-slate-500"><span className="font-semibold text-slate-700 dark:text-slate-300">Follow-ups: </span>{stats.dailyLog.followUps}</p>}
+                </section>
                 <section className={panelClass}><h3 className="font-semibold text-slate-900 dark:text-white">Coming up</h3>{stats.upcoming.length ? <ul className="mt-2 divide-y divide-slate-100 dark:divide-slate-800">{stats.upcoming.map((task) => <li key={task._id} className="flex items-center justify-between gap-3 py-2.5"><span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{task.title}</span><span className="shrink-0 text-xs text-slate-500">{formatDay(task.deadline)} · {task.hours}h</span></li>)}</ul> : <p className="mt-3 text-sm text-slate-500">Nothing scheduled ahead. Add a task to plan your next step.</p>}</section>
               </div>
             </div>
@@ -1041,7 +1079,14 @@ export const SprintTrackingScreen: React.FC = () => {
                                 </button>
                               </div>
                               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                                <span>{task.hours}h · {task.priority} priority</span>
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" title="Estimated time">
+                                  <Clock3 className="h-3 w-3" aria-hidden="true" />
+                                  {task.hours}h
+                                </span>
+                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${priorityBadgeClasses[task.priority]}`}>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+                                  {task.priority}
+                                </span>
                                 {isOverdue(task, stats?.today ?? todayDateOnly()) && (
                                   <span className="inline-flex items-center gap-1 font-semibold text-rose-600 dark:text-rose-400">
                                     <AlertTriangle className="h-3.5 w-3.5" />
@@ -1069,7 +1114,7 @@ export const SprintTrackingScreen: React.FC = () => {
                   <tbody>{filteredTasks.map((task) => {
                     const selected = selectedTaskIds.includes(task._id);
                     const overdue = isOverdue(task, stats?.today ?? todayDateOnly());
-                    return <tr key={task._id} className={`border-t transition-colors ${selected ? 'bg-indigo-50/70 dark:bg-indigo-950/25' : overdue ? 'bg-rose-50/60 dark:bg-rose-950/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'} ${overdue ? 'border-rose-200 dark:border-rose-950' : 'border-slate-100 dark:border-slate-800'}`}><td className="px-3 py-3"><input className={taskSelectionCheckboxClass} type="checkbox" aria-label={`Select ${task.title}`} checked={selected} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))} /></td><td className="max-w-64 px-3 py-3"><button type="button" className="truncate text-left font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setViewingTask(task)}>{task.title}</button>{task.notes && <p className="mt-1 truncate text-xs text-slate-500">{task.notes}</p>}</td><td className={`px-3 py-3 ${overdue ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500'}`}>{task.deadline ? <span className="inline-flex items-center gap-1.5">{overdue && <AlertTriangle className="h-3.5 w-3.5" />}{formatDay(task.deadline)}{overdue && <span className="text-[10px] uppercase">Overdue</span>}</span> : '—'}</td><td className="px-3 py-3 text-slate-500">{task.hours}h</td><td className="px-3 py-3 capitalize text-slate-500">{task.priority}</td><td className="px-3 py-3"><button type="button" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={() => void changeTaskStatus(task)}>{statusLabels[task.status]}</button></td><td className="px-3 py-3"><div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Edit ${task.title}`} onClick={() => setTaskForm(taskEditForm(task))}><Activity className="h-4 w-4" /></button><button type="button" className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 className="h-4 w-4" /></button></div></td></tr>;
+                    return <tr key={task._id} className={`border-t transition-colors ${selected ? 'bg-indigo-50/70 dark:bg-indigo-950/25' : overdue ? 'bg-rose-50/60 dark:bg-rose-950/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'} ${overdue ? 'border-rose-200 dark:border-rose-950' : 'border-slate-100 dark:border-slate-800'}`}><td className="px-3 py-3"><input className={taskSelectionCheckboxClass} type="checkbox" aria-label={`Select ${task.title}`} checked={selected} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task._id] : current.filter((id) => id !== task._id))} /></td><td className="max-w-64 px-3 py-3"><button type="button" className="truncate text-left font-medium text-slate-800 hover:text-indigo-600 dark:text-slate-100" onClick={() => setViewingTask(task)}>{task.title}</button>{task.notes && <p className="mt-1 truncate text-xs text-slate-500">{task.notes}</p>}</td><td className={`px-3 py-3 ${overdue ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500'}`}>{task.deadline ? <span className="inline-flex items-center gap-1.5">{overdue && <AlertTriangle className="h-3.5 w-3.5" />}{formatDay(task.deadline)}{overdue && <span className="text-[10px] uppercase">Overdue</span>}</span> : '—'}</td><td className="px-3 py-3"><span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" title="Estimated time"><Clock3 className="h-3 w-3" aria-hidden="true" />{task.hours}h</span></td><td className="px-3 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${priorityBadgeClasses[task.priority]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />{task.priority}</span></td><td className="px-3 py-3"><button type="button" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={() => void changeTaskStatus(task)}>{statusLabels[task.status]}</button></td><td className="px-3 py-3"><div className="flex gap-1"><button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Edit ${task.title}`} onClick={() => setTaskForm(taskEditForm(task))}><Activity className="h-4 w-4" /></button><button type="button" className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 className="h-4 w-4" /></button></div></td></tr>;
                   })}</tbody>
                 </table>
               </div>
@@ -1097,7 +1142,7 @@ export const SprintTrackingScreen: React.FC = () => {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[{ label: 'Days with notes or tasks', value: loggedDays }, { label: 'Average completion', value: `${logAverage}%` }, { label: 'Tasks completed', value: logTasksDone }, { label: 'Days in sprint', value: logs.length }].map((metric) => <article key={metric.label} className={panelClass}><p className="text-xs text-slate-500">{metric.label}</p><p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{metric.value}</p></article>)}</div>
             <section className={`${panelClass} space-y-4`}>
               <div><h2 className="font-semibold text-slate-900 dark:text-white">Daily log</h2><p className="mt-1 text-xs text-slate-500">Click a sprint day to capture what happened, sleep, and focused hours.</p></div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium">Day</th><th className="px-3 py-2 font-medium">Completion</th><th className="px-3 py-2 font-medium">Tasks</th><th className="px-3 py-2 font-medium">Sleep</th><th className="px-3 py-2 font-medium">Focus</th><th className="px-3 py-2 font-medium">Daily focus / vision</th><th className="px-3 py-2 font-medium">Daily summary</th></tr></thead><tbody>{logs.map((log) => <tr key={log._id} className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 ${log.date === stats?.today ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}`} onClick={() => setSelectedLog({ ...log })}><td className="px-3 py-3"><b>Day {log.day}</b><span className="ml-2 text-xs text-slate-500">{formatDay(log.date)}{log.isWeekend ? ' · Rest' : ''}</span></td><td className="px-3 py-3"><span className="font-medium">{log.score}%</span><div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full bg-indigo-500" style={{ width: `${log.score}%` }} /></div></td><td className="px-3 py-3 text-slate-500">{log.taskCounts.done}/{log.taskCounts.total}</td><td className="px-3 py-3 text-slate-500">{log.sleepHours ?? '—'}</td><td className="px-3 py-3 text-slate-500">{log.focusHours ?? '—'}</td><td className="max-w-56 truncate px-3 py-3 text-slate-500">{log.focusVision || '—'}</td><td className="max-w-56 truncate px-3 py-3 text-slate-500">{log.accomplishments || '—'}</td></tr>)}</tbody></table></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[1160px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium">Day</th><th className="px-3 py-2 font-medium">Completion</th><th className="px-3 py-2 font-medium">Tasks</th><th className="px-3 py-2 font-medium">Sleep</th><th className="px-3 py-2 font-medium">Focus</th><th className="px-3 py-2 font-medium">Spent</th><th className="px-3 py-2 font-medium">Spending notes</th><th className="px-3 py-2 font-medium">Tomorrow’s top 3</th><th className="px-3 py-2 font-medium">Follow-ups</th><th className="px-3 py-2 font-medium">Daily summary</th></tr></thead><tbody>{logs.map((log) => <tr key={log._id} className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 ${log.date === stats?.today ? 'bg-indigo-50/60 dark:bg-indigo-950/20' : ''}`} onClick={() => setSelectedLog({ ...log })}><td className="px-3 py-3"><b>Day {log.day}</b><span className="ml-2 text-xs text-slate-500">{formatDay(log.date)}{log.isWeekend ? ' · Rest' : ''}</span></td><td className="px-3 py-3"><span className="font-medium">{log.score}%</span><div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full bg-indigo-500" style={{ width: `${log.score}%` }} /></div></td><td className="px-3 py-3 text-slate-500">{log.taskCounts.done}/{log.taskCounts.total}</td><td className="px-3 py-3 text-slate-500">{log.sleepHours ?? '—'}</td><td className="px-3 py-3 text-slate-500">{log.focusHours ?? '—'}</td><td className="px-3 py-3 text-slate-500">{log.spendingAmount ?? '—'}</td><td className="max-w-44 truncate px-3 py-3 text-slate-500">{log.spendingNotes || '—'}</td><td className="max-w-48 truncate px-3 py-3 text-slate-500">{log.tomorrowPriorities?.filter((item) => item.trim()).join(' · ') || '—'}</td><td className="max-w-48 truncate px-3 py-3 text-slate-500">{log.followUps || '—'}</td><td className="max-w-56 truncate px-3 py-3 text-slate-500">{log.accomplishments || '—'}</td></tr>)}</tbody></table></div>
             </section>
             </div>
           )}
@@ -1172,7 +1217,10 @@ export const SprintTrackingScreen: React.FC = () => {
               </div>
               <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
                 <p className="text-xs text-slate-500">Priority</p>
-                <p className="mt-1 text-sm font-medium capitalize text-slate-900 dark:text-white">{currentViewedTask.priority}</p>
+                <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${priorityBadgeClasses[currentViewedTask.priority]}`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+                  {currentViewedTask.priority}
+                </span>
               </div>
               <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
                 <p className="text-xs text-slate-500">Scheduled date</p>
@@ -1285,7 +1333,30 @@ export const SprintTrackingScreen: React.FC = () => {
           <section role="dialog" aria-modal="true" aria-labelledby="sprint-log-title" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-5"><h2 id="sprint-log-title" className="font-semibold text-slate-900 dark:text-white">Day {selectedLog.day} · {formatDay(selectedLog.date)}</h2><p className="mt-1 text-xs text-slate-500">{selectedLog.isWeekend ? 'Rest day' : `${selectedLog.taskCounts.done}/${selectedLog.taskCounts.total} tasks complete`}</p></div>
             <section className="mb-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-950/60"><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Tasks for this day</h3>{selectedDayTasks.length ? <ul className="mt-2 space-y-2">{selectedDayTasks.map((task) => <li key={task._id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate text-slate-700 dark:text-slate-300">{task.title}<small className="ml-2 text-xs text-slate-400">{task.hours}h estimated</small></span><span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${task.status === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : task.status === 'doing' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{statusLabels[task.status]}</span></li>)}</ul> : <p className="mt-2 text-xs text-slate-500">No tasks scheduled.</p>}</section>
-            <form onSubmit={saveLog} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{(['sleepHours', 'focusHours'] as const).map((key) => <label key={key} className="space-y-1.5 text-sm font-medium">{key === 'sleepHours' ? 'Sleep (hours)' : 'Focused hours'}<input className={inputClass} type="number" min="0" max="24" step="0.25" value={selectedLog[key] ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, [key]: event.target.value === '' ? null : Number(event.target.value) })} /></label>)}</div><label className="block space-y-1.5 text-sm font-medium">Daily focus / vision<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What is the one thing you want to focus on or make progress on today?" value={selectedLog.focusVision ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, focusVision: event.target.value })} /></label><label className="block space-y-1.5 text-sm font-medium">What did you accomplish?<textarea className={`${inputClass} min-h-24 resize-y`} value={selectedLog.accomplishments} onChange={(event) => setSelectedLog({ ...selectedLog, accomplishments: event.target.value })} /></label><label className="block space-y-1.5 text-sm font-medium">What got in the way?<textarea className={`${inputClass} min-h-24 resize-y`} value={selectedLog.obstacles} onChange={(event) => setSelectedLog({ ...selectedLog, obstacles: event.target.value })} /></label><div className="flex justify-end gap-2"><button type="button" className={secondaryButtonClass} onClick={() => setSelectedLog(null)}>Cancel</button><button className={buttonClass} disabled={saving}><Save className="h-4 w-4" /> Save day</button></div></form>
+            <form onSubmit={saveLog} className="space-y-4">
+              <p className="text-sm leading-relaxed text-slate-500">Review today’s progress, capture spending and follow-ups, then choose tomorrow’s three main priorities.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(['sleepHours', 'focusHours'] as const).map((key) => <label key={key} className="space-y-1.5 text-sm font-medium">{key === 'sleepHours' ? 'Sleep (hours)' : 'Focused hours'}<input className={inputClass} type="number" min="0" max="24" step="0.25" value={selectedLog[key] ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, [key]: event.target.value === '' ? null : Number(event.target.value) })} /></label>)}
+              </div>
+              <label className="block space-y-1.5 text-sm font-medium">Daily focus / vision<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What is the one thing you wanted to focus on today?" value={selectedLog.focusVision ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, focusVision: event.target.value })} /></label>
+              <label className="block space-y-1.5 text-sm font-medium">Completed work<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What did you complete today?" value={selectedLog.accomplishments} onChange={(event) => setSelectedLog({ ...selectedLog, accomplishments: event.target.value })} /></label>
+              <label className="block space-y-1.5 text-sm font-medium">Blockers<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What got in the way?" value={selectedLog.obstacles} onChange={(event) => setSelectedLog({ ...selectedLog, obstacles: event.target.value })} /></label>
+              <section className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Spending</h3><p className="mt-1 text-xs text-slate-500">Record today’s total here; review categories and trends in Finance weekly.</p></div>
+                <label className="block space-y-1.5 text-sm font-medium">Total spent<input className={inputClass} type="number" min="0" max="1000000000" step="0.01" value={selectedLog.spendingAmount ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, spendingAmount: event.target.value === '' ? null : Number(event.target.value) })} placeholder="0.00" /></label>
+                <label className="block space-y-1.5 text-sm font-medium">Spending notes<textarea className={`${inputClass} min-h-16 resize-y`} maxLength={2000} placeholder="What did you spend on?" value={selectedLog.spendingNotes ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, spendingNotes: event.target.value })} /></label>
+              </section>
+              <label className="block space-y-1.5 text-sm font-medium">Outstanding follow-ups<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={2000} placeholder="What still needs attention?" value={selectedLog.followUps ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, followUps: event.target.value })} /></label>
+              <section className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 dark:border-indigo-900/50 dark:bg-indigo-950/20">
+                <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Tomorrow’s three main priorities</h3><p className="mt-1 text-xs text-slate-500">Choose up to three; put the most important first.</p></div>
+                {[0, 1, 2].map((index) => <label key={index} className="block space-y-1.5 text-sm font-medium"><span className="text-xs text-slate-500">Priority {index + 1}</span><input className={inputClass} maxLength={160} value={selectedLog.tomorrowPriorities?.[index] ?? ''} onChange={(event) => {
+                  const priorities = [...(selectedLog.tomorrowPriorities ?? [])];
+                  priorities[index] = event.target.value;
+                  setSelectedLog({ ...selectedLog, tomorrowPriorities: priorities.slice(0, 3) });
+                }} placeholder={index === 0 ? 'Your most important task' : 'Another important task (optional)'} /></label>)}
+              </section>
+              <div className="flex justify-end gap-2"><button type="button" className={secondaryButtonClass} onClick={() => setSelectedLog(null)}>Cancel</button><button className={buttonClass} disabled={saving}><Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save review'}</button></div>
+            </form>
           </section>
         </div>
       )}
