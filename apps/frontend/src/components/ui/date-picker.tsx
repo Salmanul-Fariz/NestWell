@@ -17,6 +17,9 @@ export interface DatePickerProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  minDate?: string;
+  id?: string;
+  'aria-label'?: string;
 }
 
 export const DatePicker: React.FC<DatePickerProps> = ({
@@ -27,6 +30,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   placeholder = 'Select date',
   className,
   disabled,
+  minDate,
+  id,
+  'aria-label': ariaLabel,
 }) => {
   const [open, setOpen] = React.useState(false);
   const selectedDate = value ? new Date(value + 'T00:00:00') : undefined;
@@ -85,7 +91,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   return (
     <div className="w-full space-y-1.5 text-left">
       {label && (
-        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">
+        <label htmlFor={id} className="block text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">
           {label}
         </label>
       )}
@@ -94,6 +100,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         <PopoverTrigger asChild>
           <button
             type="button"
+            id={id}
+            aria-label={ariaLabel}
             disabled={disabled}
             className={cn(
               'flex h-11 w-full items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50 select-none cursor-pointer',
@@ -112,7 +120,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         </PopoverTrigger>
 
         <PopoverContent
-          className="w-[280px] p-4 bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl backdrop-blur-xl"
+          className="z-[70] w-[280px] p-4 bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl backdrop-blur-xl"
           align="start"
         >
           {/* Calendar Header */}
@@ -179,14 +187,17 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               const dayNum = idx + 1;
               const selected = isSelected(dayNum);
               const today = isToday(dayNum);
+              const date = new Date(year, month, dayNum);
+              const isBeforeMinDate = Boolean(minDate && date < new Date(`${minDate}T00:00:00`));
 
               return (
                 <button
                   type="button"
                   key={dayNum}
                   onClick={() => handleSelectDay(dayNum)}
+                  disabled={isBeforeMinDate}
                   className={cn(
-                    'h-8 w-8 rounded-lg text-xs font-medium flex items-center justify-center transition-all cursor-pointer',
+                    'h-8 w-8 rounded-lg text-xs font-medium flex items-center justify-center transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-30',
                     selected
                       ? 'bg-indigo-600 text-white font-bold shadow-sm'
                       : today
@@ -204,6 +215,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px]">
             <button
               type="button"
+              disabled={Boolean(minDate && new Date() < new Date(`${minDate}T00:00:00`))}
               onClick={() => {
                 const now = new Date();
                 const m = String(now.getMonth() + 1).padStart(2, '0');

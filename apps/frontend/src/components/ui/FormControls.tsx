@@ -73,7 +73,10 @@ export const FormSelect: React.FC<{
   options: OptionItem[] | readonly string[];
   onChange?: (value: string) => void;
   className?: string;
-}> = ({ label, error, value, defaultValue, placeholder = 'Select an option...', options, onChange, className }) => {
+  id?: string;
+  'aria-label'?: string;
+  disabled?: boolean;
+}> = ({ label, error, value, defaultValue, placeholder = 'Select an option...', options, onChange, className, id, 'aria-label': ariaLabel, disabled }) => {
   const formattedOptions: OptionItem[] = options.map((opt) =>
     typeof opt === 'string' ? { value: opt, label: opt } : opt,
   );
@@ -85,8 +88,8 @@ export const FormSelect: React.FC<{
           {label}
         </label>
       )}
-      <Select value={value} defaultValue={defaultValue} onValueChange={onChange}>
-        <SelectTrigger error={!!error} className={className}>
+      <Select value={value} defaultValue={defaultValue} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger id={id} aria-label={ariaLabel} disabled={disabled} error={!!error} className={className}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>

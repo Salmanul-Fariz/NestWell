@@ -74,10 +74,12 @@ export class SprintService {
 
   async configure(userId: string, dto: SprintSettingsDto) {
     const owner = this.owner(userId);
-    const existing = await this.settingsModel.findOne({ userId: owner }).exec();
-    if (existing) throw new BadRequestException('Sprint setup is already complete.');
     if (!parseDate(dto.startDate)) {
       throw new BadRequestException('Choose a valid sprint start date.');
+    }
+    const starterTasks = dto.tasks?.map((title) => title.trim()) ?? [];
+    if (starterTasks.some((title) => !title)) {
+      throw new BadRequestException('Starter task names cannot be blank.');
     }
 
     const logs = Array.from({ length: dto.totalDays }, (_, index) => {
@@ -90,29 +92,48 @@ export class SprintService {
       };
     });
 
-    await this.dayLogModel.insertMany(logs);
-    const starterTasks = dto.tasks?.map((title) => title.trim()) ?? [];
-    if (starterTasks.some((title) => !title)) {
-      throw new BadRequestException('Starter task names cannot be blank.');
+    const session = await this.settingsModel.db.startSession();
+    try {
+      const createdSettings = await session.withTransaction(async () => {
+        const existing = await this.settingsModel
+          .findOne({ userId: owner })
+          .session(session)
+          .exec();
+        if (existing) throw new BadRequestException('Sprint setup is already complete.');
+
+        await this.dayLogModel.insertMany(logs, { session });
+        if (starterTasks.length) {
+          await this.taskModel.insertMany(
+            starterTasks.map((title) => ({
+              userId: owner,
+              title,
+              deadline: dto.startDate,
+              status: 'todo',
+              priority: 'medium',
+              hours: 1,
+            })),
+            { session },
+          );
+        }
+        const [settings] = await this.settingsModel.create(
+          [{
+            userId: owner,
+            startDate: dto.startDate,
+            totalDays: dto.totalDays,
+            weekendDays: dto.weekendDays,
+          }],
+          { session },
+        );
+        return settings;
+      });
+
+      if (!createdSettings) {
+        throw new Error('Sprint setup transaction completed without creating settings.');
+      }
+      return createdSettings;
+    } finally {
+      await session.endSession();
     }
-    if (starterTasks.length) {
-      await this.taskModel.insertMany(
-        starterTasks.map((title) => ({
-          userId: owner,
-          title: title.trim(),
-          deadline: dto.startDate,
-          status: 'todo',
-          priority: 'medium',
-          hours: 1,
-        })),
-      );
-    }
-    return this.settingsModel.create({
-      userId: owner,
-      startDate: dto.startDate,
-      totalDays: dto.totalDays,
-      weekendDays: dto.weekendDays,
-    });
   }
 
   async updateStartDate(userId: string, startDate: string) {

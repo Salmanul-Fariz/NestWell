@@ -20,6 +20,7 @@ import { api } from '../../lib/api';
 import { apiErrorMessage, todayDateOnly } from '../../lib/utils';
 import { THEME_CONFIG } from '../../lib/theme-constants';
 import { useToast } from '../../components/shared/toast-context';
+import { DatePicker, FormInput, FormSelect, FormTextarea } from '../../components/ui/FormControls';
 
 type TaskStatus = 'todo' | 'doing' | 'done';
 type TaskPriority = 'high' | 'medium' | 'low';
@@ -178,7 +179,6 @@ const periods: Array<{ id: AnalyticsPeriod; label: string }> = [
 ];
 
 const panelClass = `${THEME_CONFIG.surfaces.card} rounded-2xl p-5 shadow-sm`;
-const inputClass = `w-full rounded-xl px-3.5 py-2.5 text-sm outline-none transition ${THEME_CONFIG.surfaces.input}`;
 const taskSelectionCheckboxClass = 'h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 accent-indigo-600 transition focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-slate-600 dark:bg-slate-900 dark:accent-indigo-400 dark:focus:ring-offset-slate-900';
 const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50';
 const secondaryButtonClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800';
@@ -432,6 +432,10 @@ export const SprintTrackingScreen: React.FC = () => {
 
   const saveSettings = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!setupDate) {
+      toast.error('Choose a sprint start date.');
+      return;
+    }
     const names = starterTasks.split('\n').map((task) => task.trim()).filter(Boolean);
     if (names.length > 100 || names.some((task) => task.length > 120)) {
       toast.error('Add up to 100 starter tasks, each no longer than 120 characters.');
@@ -492,6 +496,10 @@ export const SprintTrackingScreen: React.FC = () => {
   const saveTask = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!taskForm) return;
+    if (!taskForm.deadline) {
+      toast.error('Choose a scheduled date for the task.');
+      return;
+    }
     const { repeatMode, repeatUntil, _id } = taskForm;
     const fields = {
       title: taskForm.title,
@@ -783,8 +791,8 @@ export const SprintTrackingScreen: React.FC = () => {
           </div>
           <form onSubmit={saveSettings} className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 text-sm font-medium">Sprint starts<input className={inputClass} type="date" required value={setupDate} onChange={(event) => setSetupDate(event.target.value)} /></label>
-              <label className="space-y-1.5 text-sm font-medium">Sprint length in days<input className={inputClass} type="number" min="1" max="365" required value={setupDays} onChange={(event) => setSetupDays(Number(event.target.value))} /></label>
+              <DatePicker label="Sprint starts" value={setupDate} onChange={setSetupDate} />
+              <FormInput label="Sprint length in days" type="number" min="1" max="365" required value={setupDays} onChange={(event) => setSetupDays(Number(event.target.value))} />
             </div>
             <fieldset>
               <legend className="mb-2 text-sm font-medium">Rest days</legend>
@@ -796,7 +804,7 @@ export const SprintTrackingScreen: React.FC = () => {
                 })}
               </div>
             </fieldset>
-            <label className="block space-y-1.5 text-sm font-medium">Starter tasks <span className="font-normal text-slate-400">(optional, one per line)</span><textarea className={`${inputClass} min-h-28 resize-y`} placeholder={'Read 10 pages\nGo for a walk'} value={starterTasks} onChange={(event) => setStarterTasks(event.target.value)} /></label>
+            <FormTextarea label="Starter tasks (optional, one per line)" className="min-h-28 resize-y" placeholder={'Read 10 pages\nGo for a walk'} value={starterTasks} onChange={(event) => setStarterTasks(event.target.value)} />
             <button className={buttonClass} disabled={saving}><CalendarDays className="h-4 w-4" />{saving ? 'Setting up…' : 'Create sprint'}</button>
           </form>
         </section>
@@ -1004,14 +1012,14 @@ export const SprintTrackingScreen: React.FC = () => {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-2 dark:bg-slate-950/50">
-                <input aria-label="Search tasks" className={`${inputClass} min-w-40 flex-[2] py-2 text-xs`} type="search" placeholder="Search tasks…" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} />
-                <select aria-label="Filter by status" className={`${inputClass} min-w-32 flex-1 py-2 text-xs`} value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>
-                <select aria-label="Filter by priority" className={`${inputClass} min-w-32 flex-1 py-2 text-xs`} value={taskPriorityFilter} onChange={(event) => setTaskPriorityFilter(event.target.value)}><option value="">All priorities</option>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select>
+                <div className="min-w-40 flex-[2]"><FormInput aria-label="Search tasks" className="h-9 rounded-lg px-3 py-2 text-xs" type="search" placeholder="Search tasks…" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} /></div>
+                <div className="min-w-32 flex-1"><FormSelect className="h-9 rounded-lg px-3 py-2 text-xs" aria-label="Filter by status" value={taskStatusFilter || 'all'} onChange={(value) => setTaskStatusFilter(value === 'all' ? '' : value)} options={[{ value: 'all', label: 'All statuses' }, ...statuses.map((status) => ({ value: status, label: statusLabels[status] }))]} /></div>
+                <div className="min-w-32 flex-1"><FormSelect className="h-9 rounded-lg px-3 py-2 text-xs" aria-label="Filter by priority" value={taskPriorityFilter || 'all'} onChange={(value) => setTaskPriorityFilter(value === 'all' ? '' : value)} options={[{ value: 'all', label: 'All priorities' }, ...(['high', 'medium', 'low'] as const).map((priority) => ({ value: priority, label: priority[0].toUpperCase() + priority.slice(1) }))]} /></div>
                 <div className="flex min-w-0 flex-[2] items-center gap-1.5">
                   <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Due</span>
-                  <input aria-label="Tasks from date" className={`${inputClass} min-w-0 flex-1 px-2 py-2 text-xs`} type="date" value={taskFrom} onChange={(event) => setTaskFrom(event.target.value)} />
+                  <DatePicker aria-label="Tasks from date" className="h-9 min-w-0 flex-1 rounded-lg px-2 py-2 text-xs" value={taskFrom} onChange={setTaskFrom} placeholder="From date" />
                   <span className="text-xs text-slate-400">–</span>
-                  <input aria-label="Tasks through date" className={`${inputClass} min-w-0 flex-1 px-2 py-2 text-xs`} type="date" value={taskTo} onChange={(event) => setTaskTo(event.target.value)} />
+                  <DatePicker aria-label="Tasks through date" className="h-9 min-w-0 flex-1 rounded-lg px-2 py-2 text-xs" value={taskTo} onChange={setTaskTo} placeholder="Through date" />
                 </div>
                 {(taskSearch || taskStatusFilter || taskPriorityFilter || taskFrom || taskTo) && <button type="button" className="rounded-lg px-2.5 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40" onClick={() => { setTaskSearch(''); setTaskStatusFilter(''); setTaskPriorityFilter(''); setTaskFrom(''); setTaskTo(''); }}>Reset</button>}
               </div>
@@ -1125,7 +1133,7 @@ export const SprintTrackingScreen: React.FC = () => {
 
           {section === 'analytics' && (
             <div className="space-y-5">
-              <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Sprint analytics</h2><p className="mt-1 text-sm text-slate-500">Completion, effort, and daily wellbeing over time.</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">{periods.map((item) => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${period === item.id ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`}>{item.label}</button>)}</div>{period === 'week' && <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300"><span>Sprint week</span><select aria-label="Select sprint week" className={`${inputClass} w-auto min-w-28 py-2`} value={selectedAnalyticsWeek} onChange={(event) => setAnalyticsWeek(Number(event.target.value))}>{Array.from({ length: sprintWeekCount }, (_, index) => index + 1).map((week) => <option key={week} value={week}>Week {week}</option>)}</select></label>}</div></header>
+              <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Sprint analytics</h2><p className="mt-1 text-sm text-slate-500">Completion, effort, and daily wellbeing over time.</p></div>                            <div className="flex flex-wrap items-center gap-2"><div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">{periods.map((item) => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${period === item.id ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-500'}`}>{item.label}</button>)}</div>{period === 'week' && <div className="w-auto min-w-28"><FormSelect label="Sprint week" value={String(selectedAnalyticsWeek)} onChange={(value) => setAnalyticsWeek(Number(value))} options={Array.from({ length: sprintWeekCount }, (_, index) => ({ value: String(index + 1), label: `Week ${index + 1}` }))} /></div>}</div></header>
               {analyticsLoading && <p className="text-sm text-slate-500" role="status">Loading analytics…</p>}
               {analyticsError && !analyticsLoading && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" role="alert">{analyticsError}</p>}
               {analytics && <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[{ label: 'Tasks complete', value: `${analytics.metrics.tasksDone}/${analytics.metrics.tasksTotal}` }, { label: 'Hours completed', value: `${analytics.metrics.hours}h` }, { label: 'Average completion', value: `${analytics.metrics.avgScore}%` }, { label: 'Active days', value: String(analytics.metrics.activeDays) }].map((metric) => <article key={metric.label} className={panelClass}><p className="text-xs text-slate-500">{metric.label}</p><p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{metric.value}</p></article>)}</div>
@@ -1161,11 +1169,11 @@ export const SprintTrackingScreen: React.FC = () => {
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Change sprint start date</h3>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">Move Day 1 to a different date. All sprint day dates and scheduled task dates will shift by the same number of days; task details and daily log entries stay attached to their sprint days.</p>
                 <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <label className="max-w-56 flex-1 space-y-1.5 text-sm font-medium">New Day 1 date<input className={inputClass} type="date" required value={startDateDraft || settings?.startDate || ''} onChange={(event) => setStartDateDraft(event.target.value)} /></label>
+                  <div className="max-w-56 flex-1"><DatePicker label="New Day 1 date" value={startDateDraft || settings?.startDate || ''} onChange={setStartDateDraft} /></div>
                   <button className={buttonClass} disabled={saving || !settings || startDateDraft === settings?.startDate}><CalendarDays className="h-4 w-4" /> Update sprint dates</button>
                 </div>
               </form>
-              <form onSubmit={extendSprint} className="mt-5 flex flex-wrap items-end gap-3"><label className="max-w-48 flex-1 space-y-1.5 text-sm font-medium">Add days<input className={inputClass} type="number" min="1" max="365" value={extendDays} onChange={(event) => setExtendDays(Number(event.target.value))} /></label><button className={buttonClass} disabled={saving}><Plus className="h-4 w-4" /> Extend sprint</button></form>
+              <form onSubmit={extendSprint} className="mt-5 flex flex-wrap items-end gap-3"><div className="max-w-48 flex-1"><FormInput label="Add days" type="number" min="1" max="365" value={extendDays} onChange={(event) => setExtendDays(Number(event.target.value))} /></div><button className={buttonClass} disabled={saving}><Plus className="h-4 w-4" /> Extend sprint</button></form>
               <div className="mt-5 border-t border-slate-100 pt-4 text-sm dark:border-slate-800"><p><span className="text-slate-500">Start date</span><span className="ml-3 font-medium text-slate-800 dark:text-slate-100">{settings && formatDay(settings.startDate)}</span></p><p className="mt-2"><span className="text-slate-500">Rest days</span><span className="ml-3 font-medium text-slate-800 dark:text-slate-100">{settings?.weekendDays.map((day) => weekdays[day].slice(0, 3)).join(', ') || 'None'}</span></p></div>
               <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Start over</h3>
@@ -1205,15 +1213,14 @@ export const SprintTrackingScreen: React.FC = () => {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
                 <p className="text-xs text-slate-500">Status</p>
-                <select
-                  aria-label="Task status"
-                  className={`${inputClass} mt-1`}
-                  value={currentViewedTask.status}
-                  disabled={saving}
-                  onChange={(event) => void moveTaskToStatus(currentViewedTask, event.target.value as TaskStatus)}
-                >
-                  {statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
-                </select>
+                <FormSelect
+                aria-label="Task status"
+                className="mt-1"
+                value={currentViewedTask.status}
+                disabled={saving}
+                onChange={(value) => void moveTaskToStatus(currentViewedTask, value as TaskStatus)}
+                options={statuses.map((status) => ({ value: status, label: statusLabels[status] }))}
+                />
               </div>
               <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/60">
                 <p className="text-xs text-slate-500">Priority</p>
@@ -1250,9 +1257,9 @@ export const SprintTrackingScreen: React.FC = () => {
           <section role="dialog" aria-modal="true" aria-labelledby="sprint-task-title" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-5 flex items-center justify-between"><h2 id="sprint-task-title" className="font-semibold text-slate-900 dark:text-white">{taskForm._id ? 'Edit task' : 'New sprint task'}</h2><button type="button" className="text-sm text-slate-500" onClick={() => setTaskForm(null)}>Close</button></div>
             <form onSubmit={saveTask} className="space-y-4">
-              <label className="block space-y-1.5 text-sm font-medium">Task title<input className={inputClass} required maxLength={120} autoFocus value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></label>
-              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">{!taskForm._id && taskForm.repeatMode === 'selected' ? 'First repeat date' : 'Scheduled date'}<input className={inputClass} type="date" required value={taskForm.deadline} onChange={(event) => setTaskForm({ ...taskForm, deadline: event.target.value })} /></label><label className="space-y-1.5 text-sm font-medium">Estimated time (hours)<input className={inputClass} type="number" min="0" max="24" step="0.25" value={taskForm.hours} onChange={(event) => setTaskForm({ ...taskForm, hours: Number(event.target.value) })} /></label></div>
-              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Status<select className={inputClass} value={taskForm.status} onChange={(event) => setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })}>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label><label className="space-y-1.5 text-sm font-medium">Priority<select className={inputClass} value={taskForm.priority} onChange={(event) => setTaskForm({ ...taskForm, priority: event.target.value as TaskPriority })}>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label></div>
+              <FormInput label="Task title" required maxLength={120} autoFocus value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} />
+              <div className="grid gap-3 sm:grid-cols-2"><DatePicker label={!taskForm._id && taskForm.repeatMode === 'selected' ? 'First repeat date' : 'Scheduled date'} value={taskForm.deadline} onChange={(value) => setTaskForm({ ...taskForm, deadline: value })} /><FormInput label="Estimated time (hours)" type="number" min="0" max="24" step="0.25" value={taskForm.hours} onChange={(event) => setTaskForm({ ...taskForm, hours: Number(event.target.value) })} /></div>
+              <div className="grid gap-3 sm:grid-cols-2"><FormSelect label="Status" value={taskForm.status} onChange={(value) => setTaskForm({ ...taskForm, status: value as TaskStatus })} options={statuses.map((status) => ({ value: status, label: statusLabels[status] }))} /><FormSelect label="Priority" value={taskForm.priority} onChange={(value) => setTaskForm({ ...taskForm, priority: value as TaskPriority })} options={(['high', 'medium', 'low'] as const).map((priority) => ({ value: priority, label: priority[0].toUpperCase() + priority.slice(1) }))} /></div>
               {!taskForm._id && (
                 <fieldset className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
                   <legend className="px-1 text-sm font-medium">Repeat task</legend>
@@ -1269,13 +1276,13 @@ export const SprintTrackingScreen: React.FC = () => {
                     ))}
                   </div>
                   {taskForm.repeatMode === 'until' && (
-                    <label className="block space-y-1.5 text-sm font-medium">Repeat daily through<input className={inputClass} type="date" required min={taskForm.deadline} value={taskForm.repeatUntil} onChange={(event) => setTaskForm({ ...taskForm, repeatUntil: event.target.value })} /><span className="text-xs font-normal text-slate-500">Creates one task per day, up to 90 dates.</span></label>
+                    <div className="space-y-1.5"><DatePicker label="Repeat daily through" minDate={taskForm.deadline} value={taskForm.repeatUntil} onChange={(value) => setTaskForm({ ...taskForm, repeatUntil: value })} /><p className="text-xs text-slate-500">Creates one task per day, up to 90 dates.</p></div>
                   )}
                   {taskForm.repeatMode === 'selected' && (
                     <div className="space-y-2">
                       <p className="text-xs text-slate-500">The first repeat date is included. Add more dates below (up to 90 total).</p>
                       <div className="flex flex-wrap items-end gap-2">
-                        <label className="min-w-0 flex-1 space-y-1.5 text-sm font-medium">Add another date<input className={inputClass} type="date" value={taskForm.repeatDateDraft} onChange={(event) => setTaskForm({ ...taskForm, repeatDateDraft: event.target.value })} /></label>
+                        <div className="min-w-0 flex-1"><DatePicker label="Add another date" value={taskForm.repeatDateDraft} onChange={(value) => setTaskForm({ ...taskForm, repeatDateDraft: value })} /></div>
                         <button type="button" className={secondaryButtonClass} onClick={() => {
                           const date = taskForm.repeatDateDraft;
                           if (!date) {
@@ -1302,7 +1309,7 @@ export const SprintTrackingScreen: React.FC = () => {
                   )}
                 </fieldset>
               )}
-              <label className="block space-y-1.5 text-sm font-medium">Notes<textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} value={taskForm.notes} onChange={(event) => setTaskForm({ ...taskForm, notes: event.target.value })} /></label>
+              <FormTextarea label="Notes" className="min-h-24 resize-y" maxLength={4000} value={taskForm.notes} onChange={(event) => setTaskForm({ ...taskForm, notes: event.target.value })} />
               <div className="flex justify-between gap-2 pt-2">{taskForm._id ? <button type="button" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => { const task = tasks.find((item) => item._id === taskForm._id); if (task) { setTaskForm(null); void deleteTask(task); } }}><Trash2 className="h-4 w-4" /> Delete</button> : <span /> }<button className={buttonClass} disabled={saving}><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save task'}</button></div>
             </form>
           </section>
@@ -1314,14 +1321,14 @@ export const SprintTrackingScreen: React.FC = () => {
           <section role="dialog" aria-modal="true" aria-labelledby="sprint-bulk-task-title" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="sprint-bulk-task-title" className="font-semibold text-slate-900 dark:text-white">Update selected tasks</h2><p className="mt-1 text-sm text-slate-500">Values are copied from “{tasks.find((task) => selectedTaskIds.includes(task._id))?.title}”. Select the fields you want applied to all {selectedTaskIds.length} selected tasks.</p></div><button type="button" className="text-sm text-slate-500" disabled={saving} onClick={() => setBulkTaskForm(null)}>Close</button></div>
             <form onSubmit={saveBulkTaskUpdates} className="space-y-4">
-              <label className="block space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.title} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, title: event.target.checked })} />Apply title to all</span><input className={inputClass} required={bulkTaskFields.title} maxLength={120} disabled={!bulkTaskFields.title || saving} value={bulkTaskForm.title} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, title: event.target.value })} /></label>
+              <div className="space-y-1.5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={bulkTaskFields.title} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, title: event.target.checked })} />Apply title to all</label><FormInput required={bulkTaskFields.title} maxLength={120} disabled={!bulkTaskFields.title || saving} value={bulkTaskForm.title} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, title: event.target.value })} /></div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.deadline} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, deadline: event.target.checked })} />Apply date to all</span><input className={inputClass} type="date" required={bulkTaskFields.deadline} disabled={!bulkTaskFields.deadline || saving} value={bulkTaskForm.deadline} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, deadline: event.target.value })} /></label>
-                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.hours} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, hours: event.target.checked })} />Apply estimate to all</span><input className={inputClass} type="number" min="0" max="24" step="0.25" disabled={!bulkTaskFields.hours || saving} value={bulkTaskForm.hours} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, hours: Number(event.target.value) })} /></label>
-                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.status} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, status: event.target.checked })} />Apply status to all</span><select className={inputClass} disabled={!bulkTaskFields.status || saving} value={bulkTaskForm.status} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, status: event.target.value as TaskStatus })}>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label>
-                <label className="space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.priority} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, priority: event.target.checked })} />Apply priority to all</span><select className={inputClass} disabled={!bulkTaskFields.priority || saving} value={bulkTaskForm.priority} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, priority: event.target.value as TaskPriority })}>{(['high', 'medium', 'low'] as const).map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label>
+                <div className="space-y-1.5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={bulkTaskFields.deadline} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, deadline: event.target.checked })} />Apply date to all</label><DatePicker disabled={!bulkTaskFields.deadline || saving} value={bulkTaskForm.deadline} onChange={(value) => setBulkTaskForm({ ...bulkTaskForm, deadline: value })} /></div>
+                <div className="space-y-1.5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={bulkTaskFields.hours} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, hours: event.target.checked })} />Apply estimate to all</label><FormInput type="number" min="0" max="24" step="0.25" disabled={!bulkTaskFields.hours || saving} value={bulkTaskForm.hours} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, hours: Number(event.target.value) })} /></div>
+                <div className="space-y-1.5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={bulkTaskFields.status} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, status: event.target.checked })} />Apply status to all</label><FormSelect disabled={!bulkTaskFields.status || saving} value={bulkTaskForm.status} onChange={(value) => setBulkTaskForm({ ...bulkTaskForm, status: value as TaskStatus })} options={statuses.map((status) => ({ value: status, label: statusLabels[status] }))} /></div>
+                <div className="space-y-1.5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={bulkTaskFields.priority} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, priority: event.target.checked })} />Apply priority to all</label><FormSelect disabled={!bulkTaskFields.priority || saving} value={bulkTaskForm.priority} onChange={(value) => setBulkTaskForm({ ...bulkTaskForm, priority: value as TaskPriority })} options={(['high', 'medium', 'low'] as const).map((priority) => ({ value: priority, label: priority[0].toUpperCase() + priority.slice(1) }))} /></div>
               </div>
-              <label className="block space-y-1.5 text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkTaskFields.notes} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, notes: event.target.checked })} />Apply notes to all</span><textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} disabled={!bulkTaskFields.notes || saving} value={bulkTaskForm.notes} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, notes: event.target.value })} /></label>
+              <div className="space-y-1.5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={bulkTaskFields.notes} onChange={(event) => setBulkTaskFields({ ...bulkTaskFields, notes: event.target.checked })} />Apply notes to all</label><FormTextarea className="min-h-24 resize-y" maxLength={4000} disabled={!bulkTaskFields.notes || saving} value={bulkTaskForm.notes} onChange={(event) => setBulkTaskForm({ ...bulkTaskForm, notes: event.target.value })} /></div>
               <div className="flex justify-end gap-2 pt-2"><button type="button" className={secondaryButtonClass} disabled={saving} onClick={() => setBulkTaskForm(null)}>Cancel</button><button className={buttonClass} disabled={saving}>{saving ? 'Updating…' : `Save for ${selectedTaskIds.length} tasks`}</button></div>
             </form>
           </section>
@@ -1336,24 +1343,24 @@ export const SprintTrackingScreen: React.FC = () => {
             <form onSubmit={saveLog} className="space-y-4">
               <p className="text-sm leading-relaxed text-slate-500">Review today’s progress, capture spending and follow-ups, then choose tomorrow’s three main priorities.</p>
               <div className="grid gap-3 sm:grid-cols-2">
-                {(['sleepHours', 'focusHours'] as const).map((key) => <label key={key} className="space-y-1.5 text-sm font-medium">{key === 'sleepHours' ? 'Sleep (hours)' : 'Focused hours'}<input className={inputClass} type="number" min="0" max="24" step="0.25" value={selectedLog[key] ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, [key]: event.target.value === '' ? null : Number(event.target.value) })} /></label>)}
+                {(['sleepHours', 'focusHours'] as const).map((key) => <FormInput key={key} label={key === 'sleepHours' ? 'Sleep (hours)' : 'Focused hours'} type="number" min="0" max="24" step="0.25" value={selectedLog[key] ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, [key]: event.target.value === '' ? null : Number(event.target.value) })} />)}
               </div>
-              <label className="block space-y-1.5 text-sm font-medium">Daily focus / vision<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What is the one thing you wanted to focus on today?" value={selectedLog.focusVision ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, focusVision: event.target.value })} /></label>
-              <label className="block space-y-1.5 text-sm font-medium">Completed work<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What did you complete today?" value={selectedLog.accomplishments} onChange={(event) => setSelectedLog({ ...selectedLog, accomplishments: event.target.value })} /></label>
-              <label className="block space-y-1.5 text-sm font-medium">Blockers<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={4000} placeholder="What got in the way?" value={selectedLog.obstacles} onChange={(event) => setSelectedLog({ ...selectedLog, obstacles: event.target.value })} /></label>
+              <FormTextarea label="Daily focus / vision" className="min-h-20 resize-y" maxLength={4000} placeholder="What is the one thing you wanted to focus on today?" value={selectedLog.focusVision ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, focusVision: event.target.value })} />
+              <FormTextarea label="Completed work" className="min-h-20 resize-y" maxLength={4000} placeholder="What did you complete today?" value={selectedLog.accomplishments} onChange={(event) => setSelectedLog({ ...selectedLog, accomplishments: event.target.value })} />
+              <FormTextarea label="Blockers" className="min-h-20 resize-y" maxLength={4000} placeholder="What got in the way?" value={selectedLog.obstacles} onChange={(event) => setSelectedLog({ ...selectedLog, obstacles: event.target.value })} />
               <section className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
                 <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Spending</h3><p className="mt-1 text-xs text-slate-500">Record today’s total here; review categories and trends in Finance weekly.</p></div>
-                <label className="block space-y-1.5 text-sm font-medium">Total spent<input className={inputClass} type="number" min="0" max="1000000000" step="0.01" value={selectedLog.spendingAmount ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, spendingAmount: event.target.value === '' ? null : Number(event.target.value) })} placeholder="0.00" /></label>
-                <label className="block space-y-1.5 text-sm font-medium">Spending notes<textarea className={`${inputClass} min-h-16 resize-y`} maxLength={2000} placeholder="What did you spend on?" value={selectedLog.spendingNotes ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, spendingNotes: event.target.value })} /></label>
+                <FormInput label="Total spent" type="number" min="0" max="1000000000" step="0.01" value={selectedLog.spendingAmount ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, spendingAmount: event.target.value === '' ? null : Number(event.target.value) })} placeholder="0.00" />
+                <FormTextarea label="Spending notes" className="min-h-16 resize-y" maxLength={2000} placeholder="What did you spend on?" value={selectedLog.spendingNotes ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, spendingNotes: event.target.value })} />
               </section>
-              <label className="block space-y-1.5 text-sm font-medium">Outstanding follow-ups<textarea className={`${inputClass} min-h-20 resize-y`} maxLength={2000} placeholder="What still needs attention?" value={selectedLog.followUps ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, followUps: event.target.value })} /></label>
+              <FormTextarea label="Outstanding follow-ups" className="min-h-20 resize-y" maxLength={2000} placeholder="What still needs attention?" value={selectedLog.followUps ?? ''} onChange={(event) => setSelectedLog({ ...selectedLog, followUps: event.target.value })} />
               <section className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 dark:border-indigo-900/50 dark:bg-indigo-950/20">
                 <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Tomorrow’s three main priorities</h3><p className="mt-1 text-xs text-slate-500">Choose up to three; put the most important first.</p></div>
-                {[0, 1, 2].map((index) => <label key={index} className="block space-y-1.5 text-sm font-medium"><span className="text-xs text-slate-500">Priority {index + 1}</span><input className={inputClass} maxLength={160} value={selectedLog.tomorrowPriorities?.[index] ?? ''} onChange={(event) => {
+                {[0, 1, 2].map((index) => <FormInput key={index} label={`Priority ${index + 1}`} maxLength={160} value={selectedLog.tomorrowPriorities?.[index] ?? ''} onChange={(event) => {
                   const priorities = [...(selectedLog.tomorrowPriorities ?? [])];
                   priorities[index] = event.target.value;
                   setSelectedLog({ ...selectedLog, tomorrowPriorities: priorities.slice(0, 3) });
-                }} placeholder={index === 0 ? 'Your most important task' : 'Another important task (optional)'} /></label>)}
+                }} placeholder={index === 0 ? 'Your most important task' : 'Another important task (optional)'} />)}
               </section>
               <div className="flex justify-end gap-2"><button type="button" className={secondaryButtonClass} onClick={() => setSelectedLog(null)}>Cancel</button><button className={buttonClass} disabled={saving}><Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save review'}</button></div>
             </form>
@@ -1365,10 +1372,10 @@ export const SprintTrackingScreen: React.FC = () => {
         <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReviewForm(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="sprint-review-title" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-5"><h2 id="sprint-review-title" className="font-semibold text-slate-900 dark:text-white">{reviewForm._id ? 'Edit review' : 'New review'}</h2><p className="mt-1 text-xs text-slate-500">Look back on progress and choose a next step.</p></div>
-            <form onSubmit={saveReview} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">Review type<select className={inputClass} value={reviewForm.type} onChange={(event) => setReviewForm({ ...reviewForm, type: event.target.value as ReviewForm['type'] })}><option value="weekly">Weekly</option><option value="final">Final sprint review</option></select></label>{reviewForm.type === 'weekly' && <label className="space-y-1.5 text-sm font-medium">Week<input className={inputClass} type="number" min="1" value={reviewForm.week} onChange={(event) => setReviewForm({ ...reviewForm, week: Number(event.target.value) })} /></label>}</div>
+            <form onSubmit={saveReview} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><FormSelect label="Review type" value={reviewForm.type} onChange={(value) => setReviewForm({ ...reviewForm, type: value as ReviewForm['type'] })} options={[{ value: 'weekly', label: 'Weekly' }, { value: 'final', label: 'Final sprint review' }]} />{reviewForm.type === 'weekly' && <FormInput label="Week" type="number" min="1" value={reviewForm.week} onChange={(event) => setReviewForm({ ...reviewForm, week: Number(event.target.value) })} />}</div>
               {reviewForm.type === 'weekly' && <div className="rounded-xl bg-indigo-50 px-4 py-3 text-xs text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200">Weekly review covers days {(reviewForm.week - 1) * 7 + 1}–{reviewForm.week * 7}. {displayedReviewWeekStats ? `${displayedReviewWeekStats.avgScore}% average completion · ${displayedReviewWeekStats.hours}h completed · ${displayedReviewWeekStats.tasksDone} tasks done${displayedReviewWeekStats.sleepAvg != null ? ` · ${displayedReviewWeekStats.sleepAvg}h average sleep` : ''}${displayedReviewWeekStats.focusAvg != null ? ` · ${displayedReviewWeekStats.focusAvg}h average focus` : ''}` : 'Weekly progress is unavailable until the sprint API responds.'}</div>}
               {reviewForm.type === 'weekly' && displayedReviewWeekStats?.daily.length ? <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800"><table className="w-full min-w-[420px] text-left text-xs"><thead className="text-slate-500"><tr><th className="px-3 py-2 font-medium">Day</th><th className="px-3 py-2 font-medium">Completion</th><th className="px-3 py-2 font-medium">Tasks</th><th className="px-3 py-2 font-medium">Hours</th></tr></thead><tbody>{displayedReviewWeekStats.daily.map((day) => <tr key={day.day} className="border-t border-slate-100 dark:border-slate-800"><td className="px-3 py-2">Day {day.day} · {formatDay(day.date)}</td><td className="px-3 py-2">{day.score}%</td><td className="px-3 py-2">{day.done}/{day.total}</td><td className="px-3 py-2">{day.hours}h</td></tr>)}</tbody></table></div> : null}
-              {([['summary', 'What went well?', 'What did you finish or learn?'], ['change', 'What should improve?', 'What made progress harder than it needed to be?'], ['tests', reviewForm.type === 'weekly' ? 'One next step' : 'What will you carry forward?', 'Make the next step small and specific.']] as const).map(([key, label, placeholder]) => <label key={key} className="block space-y-1.5 text-sm font-medium">{label}<textarea className={`${inputClass} min-h-24 resize-y`} maxLength={4000} placeholder={placeholder} value={reviewForm[key]} onChange={(event) => setReviewForm({ ...reviewForm, [key]: event.target.value })} /></label>)}
+              {([['summary', 'What went well?', 'What did you finish or learn?'], ['change', 'What should improve?', 'What made progress harder than it needed to be?'], ['tests', reviewForm.type === 'weekly' ? 'One next step' : 'What will you carry forward?', 'Make the next step small and specific.']] as const).map(([key, label, placeholder]) => <FormTextarea key={key} label={label} className="min-h-24 resize-y" maxLength={4000} placeholder={placeholder} value={reviewForm[key]} onChange={(event) => setReviewForm({ ...reviewForm, [key]: event.target.value })} />)}
               <div className="flex justify-between gap-2 pt-2">{reviewForm._id ? <button type="button" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => void deleteReview()}><Trash2 className="h-4 w-4" /> Delete</button> : <span /> }<button className={buttonClass} disabled={saving}><Save className="h-4 w-4" /> Save review</button></div>
             </form>
           </section>
