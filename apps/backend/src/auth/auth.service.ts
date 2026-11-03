@@ -129,7 +129,12 @@ export class AuthService {
       user.refreshTokenHash || nextHash,
     );
 
-    return { accessToken, refreshToken };
+    return {
+      accessToken,
+      refreshToken,
+      accessTokenExpiresInMs: this.getAccessTokenMaxAgeMs(),
+      refreshTokenExpiresInMs: this.getRefreshTokenMaxAgeMs(),
+    };
   }
 
   async logout(userId: string) {
@@ -151,6 +156,8 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
+      accessTokenExpiresInMs: this.getAccessTokenMaxAgeMs(),
+      refreshTokenExpiresInMs: this.getRefreshTokenMaxAgeMs(),
     };
   }
 

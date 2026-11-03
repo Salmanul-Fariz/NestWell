@@ -1,7 +1,7 @@
 import type { JwtSignOptions } from '@nestjs/jwt';
 
 export const DEFAULT_ACCESS_TOKEN_TTL = '15m';
-export const DEFAULT_REFRESH_TOKEN_TTL = '7d';
+export const DEFAULT_REFRESH_TOKEN_TTL = '30d';
 export type JwtDuration = Exclude<NonNullable<JwtSignOptions['expiresIn']>, number>;
 
 /**
@@ -35,7 +35,7 @@ export function tokenTtlToMilliseconds(value: string): number {
   return milliseconds;
 }
 
-/** Rotate refresh token on every refresh call to extend the 7d session */
+/** Rotate refresh token on every refresh call to extend the sliding session window. */
 export const REFRESH_ROTATE_AFTER_MS = 0;
 
 /** A just-replaced refresh token stays usable for 5 minutes so concurrent and async network requests survive */

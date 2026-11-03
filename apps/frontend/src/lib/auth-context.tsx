@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import {
-  ACCESS_REFRESH_LEAD_MS,
-  ACCESS_TOKEN_MS,
   api,
   getLastRefreshAt,
+  getSessionRefreshCheckIntervalMs,
+  getSessionRefreshDelayMs,
   markSessionRefreshed,
   refreshSession,
   setSessionExpiredHandler,
@@ -49,29 +50,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAuth = async () => {
     try {
+      try {
+        await refreshSession();
+      } catch (refreshError) {
+        if (axios.isAxiosError(refreshError) && refreshError.response?.status === 401) {
+          throw refreshError;
+        }
+      }
       const res = await api.get<User>('/auth/me');
       setUser(res.data);
       userRef.current = res.data;
-      markSessionRefreshed();
       const storedKey = await restoreCryptoKey();
       setCryptoKey(storedKey);
     } catch {
-      // If /auth/me failed (e.g. access token expired during page load), attempt explicit refresh
-      try {
-        await refreshSession();
-        const res = await api.get<User>('/auth/me');
-        setUser(res.data);
-        userRef.current = res.data;
-        markSessionRefreshed();
-        const storedKey = await restoreCryptoKey();
-        setCryptoKey(storedKey);
-      } catch {
-        // Keep the existing browser session during a temporary API/network failure.
-        // A confirmed 401 is handled by the API interceptor and clears the session.
-        if (!userRef.current) {
-          setUser(null);
-          setCryptoKey(null);
-        }
+      // Refreshing first renews the sliding window and synchronizes the configured token TTLs.
+      if (!userRef.current) {
+        setUser(null);
+        setCryptoKey(null);
       }
     } finally {
       setLoading(false);
@@ -91,7 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setUser(nextUser);
     userRef.current = nextUser;
-    markSessionRefreshed();
+    markSessionRefreshed(res.data);
     await applyVaultKey(password);
   };
 
@@ -104,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setUser(nextUser);
     userRef.current = nextUser;
-    markSessionRefreshed();
+    markSessionRefreshed(res.data);
     await applyVaultKey(password);
   };
 
@@ -135,7 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      */
     const maybeRefresh = () => {
       if (!userRef.current) return;
-      if (Date.now() - getLastRefreshAt() < ACCESS_TOKEN_MS - ACCESS_REFRESH_LEAD_MS) {
+      if (Date.now() - getLastRefreshAt() < getSessionRefreshDelayMs()) {
         return;
       }
       void refreshSession().catch(() => undefined);
@@ -147,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', maybeRefresh);
-    const intervalId = window.setInterval(maybeRefresh, 60_000);
+    const intervalId = window.setInterval(maybeRefresh, getSessionRefreshCheckIntervalMs());
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);

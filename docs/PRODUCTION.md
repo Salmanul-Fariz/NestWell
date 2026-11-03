@@ -68,11 +68,15 @@ automatically use the same expiration as their JWTs:
 
 ```dotenv
 JWT_ACCESS_TOKEN_EXPIRES_IN=15m
-JWT_REFRESH_TOKEN_EXPIRES_IN=7d
+JWT_REFRESH_TOKEN_EXPIRES_IN=30d
 ```
 
 Supported units are `ms`, `s`, `m`, `h`, `d`, and `w` (for example, `30m`, `8h`,
-or `14d`). Restart the `app` container after changing either value.
+or `14d`). The refresh token uses a sliding expiration: each successful refresh
+renews its configured lifetime, so users remain signed in while using the app.
+The session expires after the refresh lifetime without activity. The frontend
+uses the token lifetimes returned by the API to refresh before either token
+expires. Restart the `app` container after changing either value.
 
 ## Remove Docker resources
 

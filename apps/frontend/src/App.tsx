@@ -24,8 +24,7 @@ import {
   Sun,
   Moon,
   Laptop,
-  Menu,
-  X,
+  MoreHorizontal,
   Target,
   PanelLeftClose,
   PanelLeftOpen,
@@ -65,6 +64,8 @@ const navigationGroups: Array<{
   },
 ];
 const navigationTabs = navigationGroups.flatMap((group) => group.items);
+const mobileNavigationTabs: AppTab[] = ['reports', 'sprint', 'cashflow', 'events', 'vault'];
+const mobileMoreTabs = navigationTabs.filter((tab) => !mobileNavigationTabs.includes(tab.id));
 
 function tabForPath(pathname: string): AppTab | null {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
@@ -82,7 +83,7 @@ const DashboardShell: React.FC = () => {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<AppTab>(() => tabForPath(window.location.pathname) ?? 'reports');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [compactThemeMenuOpen, setCompactThemeMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -97,10 +98,12 @@ const DashboardShell: React.FC = () => {
       const tab = tabForPath(window.location.pathname);
       if (tab) {
         setActiveTab(tab);
-        setMobileMenuOpen(false);
+        setMobileMoreOpen(false);
+        window.scrollTo(0, 0);
       } else {
         window.history.replaceState(null, '', '/dashboard');
         setActiveTab('reports');
+        window.scrollTo(0, 0);
       }
     };
 
@@ -108,6 +111,15 @@ const DashboardShell: React.FC = () => {
     window.addEventListener('popstate', syncRoute);
     return () => window.removeEventListener('popstate', syncRoute);
   }, []);
+
+  useEffect(() => {
+    if (!mobileMoreOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMoreOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileMoreOpen]);
 
   const navigateTo = (tab: AppTab) => {
     const destination = navigationTabs.find((item) => item.id === tab)?.path;
@@ -117,13 +129,14 @@ const DashboardShell: React.FC = () => {
       window.history.pushState(null, '', destination);
     }
     setActiveTab(tab);
+    setMobileMoreOpen(false);
+    window.scrollTo(0, 0);
   };
 
   const handleNavigation = (event: React.MouseEvent<HTMLAnchorElement>, tab: AppTab) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     navigateTo(tab);
-    setMobileMenuOpen(false);
   };
 
   const setSidebarCollapsedState = (collapsed: boolean) => {
@@ -221,7 +234,7 @@ const DashboardShell: React.FC = () => {
   const toggleSidebar = () => setSidebarCollapsedState(!sidebarCollapsed);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 transition-colors selection:bg-indigo-500 selection:text-white dark:bg-[#070913] dark:text-slate-100">
+    <div className="min-h-screen min-h-[100dvh] bg-[#f8fafc] text-slate-900 transition-colors selection:bg-indigo-500 selection:text-white dark:bg-[#070913] dark:text-slate-100">
       <aside className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-slate-200/80 bg-white/95 backdrop-blur-xl transition-[width] duration-200 dark:border-slate-800/80 dark:bg-slate-950/95 xl:flex ${sidebarCollapsed ? 'w-[76px]' : 'w-[272px]'}`}>
         <div className={`flex h-[76px] shrink-0 items-center border-b border-slate-100 dark:border-slate-800/80 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-5'}`}>
           <NestwellLogo size={36} />
@@ -319,16 +332,6 @@ const DashboardShell: React.FC = () => {
 
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-950/90 xl:hidden">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            className="rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-            aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
-            aria-expanded={mobileMenuOpen}
-            aria-controls="mobile-navigation"
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
           <NestwellLogo size={32} />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-slate-900 dark:text-white">Nestwell</p>
@@ -339,55 +342,10 @@ const DashboardShell: React.FC = () => {
             <LogOut className="h-4 w-4" />
           </button>
         </div>
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div
-              id="mobile-navigation"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-t border-slate-200 dark:border-slate-800"
-            >
-              <nav className="grid gap-4 px-4 py-5 sm:grid-cols-2" aria-label="Main navigation">
-                {navigationGroups.map((group) => (
-                  <section key={group.label} aria-label={`${group.label} navigation`}>
-                    <h2 className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{group.label}</h2>
-                    <div className="space-y-1">
-                      {group.items.map((tab) => {
-                        const Icon = tab.icon;
-                        const isActive = activeTab === tab.id;
-                        return (
-                          <a
-                            key={tab.id}
-                            href={tab.path}
-                            onClick={(event) => handleNavigation(event, tab.id)}
-                            aria-current={isActive ? 'page' : undefined}
-                            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                              isActive
-                                ? 'bg-indigo-600 text-white shadow-sm'
-                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900'
-                            }`}
-                          >
-                            <Icon className="h-4 w-4" />
-                            {tab.label}
-                          </a>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
-              </nav>
-              <div className="border-t border-slate-100 px-6 py-3 text-xs dark:border-slate-800">
-                <p className="font-semibold text-slate-700 dark:text-slate-200">{user?.name}</p>
-                <p className="mt-0.5 text-slate-400">{user?.email}</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </header>
 
       {/* Main Content Area */}
-      <main className={`min-w-0 w-full px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-8 ${sidebarCollapsed ? 'xl:ml-[76px] xl:w-auto' : 'xl:ml-[272px] xl:w-auto'}`}>
+      <main className={`min-w-0 w-full px-4 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] xl:px-8 xl:py-8 ${sidebarCollapsed ? 'xl:ml-[76px] xl:w-auto' : 'xl:ml-[272px] xl:w-auto'}`}>
         <div className="mx-auto min-w-0 w-full max-w-[1440px]">
         <AnimatePresence mode="wait">
           {activeTab === 'reports' && (
@@ -476,6 +434,106 @@ const DashboardShell: React.FC = () => {
         </AnimatePresence>
         </div>
       </main>
+
+      <AnimatePresence>
+        {mobileMoreOpen && (
+          <>
+            <motion.button
+              type="button"
+              aria-label="Close more navigation"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileMoreOpen(false)}
+              className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[2px] xl:hidden"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              role="dialog"
+              aria-label="More sections"
+              className="fixed inset-x-3 z-50 mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 xl:hidden"
+              style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+            >
+              <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">More sections</p>
+              <nav className="grid grid-cols-2 gap-2" aria-label="More navigation">
+                {mobileMoreTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <a
+                      key={tab.id}
+                      href={tab.path}
+                      onClick={(event) => handleNavigation(event, tab.id)}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium transition ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {tab.label}
+                    </a>
+                  );
+                })}
+              </nav>
+              <div className="mt-3 border-t border-slate-100 px-2 pt-3 text-xs dark:border-slate-800">
+                <p className="truncate font-semibold text-slate-700 dark:text-slate-200">{user?.name}</p>
+                <p className="truncate text-slate-400">{user?.email}</p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <nav
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200/80 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-950/95 xl:hidden"
+        aria-label="Main navigation"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.375rem)' }}
+      >
+        <div className="mx-auto grid h-[4.25rem] max-w-xl grid-cols-6 items-stretch px-1.5">
+          {mobileNavigationTabs.map((tabId) => {
+            const tab = navigationTabs.find((item) => item.id === tabId);
+            if (!tab) return null;
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <a
+                key={tab.id}
+                href={tab.path}
+                onClick={(event) => handleNavigation(event, tab.id)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition-colors ${
+                  isActive
+                    ? 'text-indigo-600 dark:text-indigo-300'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
+                }`}
+              >
+                {isActive && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-600 dark:bg-indigo-400" />}
+                <Icon className={`h-5 w-5 ${isActive ? 'stroke-[2.4]' : ''}`} aria-hidden="true" />
+                <span className="max-w-full truncate">{tab.label}</span>
+              </a>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setMobileMoreOpen((open) => !open)}
+            aria-expanded={mobileMoreOpen}
+            aria-label={mobileMoreOpen ? 'Close more navigation' : 'More sections'}
+            className={`relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition-colors ${
+              mobileMoreOpen || mobileMoreTabs.some((tab) => tab.id === activeTab)
+                ? 'text-indigo-600 dark:text-indigo-300'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
+            }`}
+          >
+            {(mobileMoreOpen || mobileMoreTabs.some((tab) => tab.id === activeTab)) && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-600 dark:bg-indigo-400" />}
+            <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+            <span>More</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 };

@@ -752,16 +752,19 @@ export const SprintTrackingScreen: React.FC = () => {
       </header>
 
       {settings && (
-        <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" aria-label="Sprint sections">
+        <nav className="-mx-4 sticky top-16 z-20 flex snap-x gap-2 overflow-x-auto border-y border-slate-200/70 bg-slate-50/95 px-4 py-2 backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/95 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:border-0 sm:bg-transparent sm:p-0 sm:dark:bg-transparent xl:static xl:grid-cols-6" aria-label="Sprint sections">
           {sections.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 type="button"
                 key={item.id}
-                onClick={() => setSection(item.id)}
+                onClick={() => {
+                  setSection(item.id);
+                  window.scrollTo(0, 0);
+                }}
                 aria-current={section === item.id ? 'page' : undefined}
-                className={`inline-flex items-center justify-start gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition ${
+                className={`inline-flex min-h-10 shrink-0 snap-start items-center justify-start gap-2 rounded-xl border px-3 py-2 text-left text-xs font-medium transition sm:min-h-11 sm:gap-2.5 sm:px-3 sm:py-2.5 sm:text-sm ${
                   section === item.id
                     ? 'border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300'
                     : 'border-slate-200/80 bg-white/70 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:bg-slate-900'

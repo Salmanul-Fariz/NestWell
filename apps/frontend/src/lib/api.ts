@@ -2,7 +2,7 @@ import axios from 'axios';
 
 /** Must mirror auth.constants.ts on the backend. */
 export const ACCESS_TOKEN_MS = 15 * 60 * 1000;
-export const REFRESH_TOKEN_MS = 7 * 24 * 60 * 60 * 1000;
+export const REFRESH_TOKEN_MS = 30 * 24 * 60 * 60 * 1000;
 /** Refresh 3 minutes before the access token expires. */
 export const ACCESS_REFRESH_LEAD_MS = 3 * 60 * 1000;
 
@@ -16,14 +16,39 @@ export const api = axios.create({
 
 let refreshPromise: Promise<unknown> | null = null;
 let lastRefreshAt = Date.now();
+let accessTokenTtlMs = ACCESS_TOKEN_MS;
+let refreshTokenTtlMs = REFRESH_TOKEN_MS;
 let onSessionExpired: (() => void) | null = null;
 
 export function getLastRefreshAt() {
   return lastRefreshAt;
 }
 
-export function markSessionRefreshed() {
+export function markSessionRefreshed(session?: {
+  accessTokenExpiresInMs?: number;
+  refreshTokenExpiresInMs?: number;
+}) {
   lastRefreshAt = Date.now();
+  const accessTtl = session?.accessTokenExpiresInMs;
+  if (typeof accessTtl === 'number' && Number.isFinite(accessTtl) && accessTtl > 0) {
+    accessTokenTtlMs = accessTtl;
+  }
+  const refreshTtl = session?.refreshTokenExpiresInMs;
+  if (typeof refreshTtl === 'number' && Number.isFinite(refreshTtl) && refreshTtl > 0) {
+    refreshTokenTtlMs = refreshTtl;
+  }
+}
+
+export function getSessionRefreshDelayMs() {
+  const shortestTtl = Math.min(accessTokenTtlMs, refreshTokenTtlMs);
+  return Math.max(
+    1_000,
+    shortestTtl - Math.min(ACCESS_REFRESH_LEAD_MS, shortestTtl / 3),
+  );
+}
+
+export function getSessionRefreshCheckIntervalMs() {
+  return Math.min(60_000, Math.max(1_000, getSessionRefreshDelayMs() / 6));
 }
 
 export function setSessionExpiredHandler(handler: (() => void) | null) {
@@ -35,7 +60,7 @@ export function refreshSession() {
     refreshPromise = axios
       .post('/api/v1/auth/refresh', {}, { withCredentials: true })
       .then((res) => {
-        markSessionRefreshed();
+        markSessionRefreshed(res.data);
         return res;
       })
       .finally(() => {
